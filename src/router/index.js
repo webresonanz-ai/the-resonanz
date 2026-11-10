@@ -33,6 +33,12 @@ const router = createRouter({
       component: () => import('../views/NewsView.vue'),
     },
     {
+      path: '/admin',
+      name: 'admin',
+      component: () => import('../views/AdminView.vue'),
+      meta: { admin: true },
+    },
+    {
       path: '/contact',
       name: 'contact',
       component: () => import('../views/ContactView.vue'),
@@ -61,6 +67,13 @@ router.beforeEach(async (to) => {
   // The dashboard is public. Only bounce already-signed-in users away from
   // the login/register pages so they don't see them twice.
   if (to.meta.guest && authStore.isAuthenticated) {
+    return { name: 'home' }
+  }
+
+  if (to.meta.admin && !authStore.isAdmin) {
+    if (!authStore.isAuthenticated) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
     return { name: 'home' }
   }
 })

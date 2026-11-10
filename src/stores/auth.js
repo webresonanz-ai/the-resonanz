@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import { auth, googleProvider, isFirebaseConfigured } from '@/firebase/config'
-import { ensureUserProfile } from '@/firebase/users'
+import { ensureUserProfile, getUserProfile } from '@/firebase/users'
 
 /* ---- helpers ---- */
 function mapUser(u) {
@@ -21,6 +21,7 @@ function mapUser(u) {
     photoURL: u.photoURL,
     provider: u.providerData?.[0]?.providerId || null,
     createdAt: u.metadata?.creationTime || null,
+    role: 'guest',
   }
 }
 
@@ -57,6 +58,7 @@ export const useAuthStore = defineStore('auth', () => {
   let initPromise = null
 
   const isAuthenticated = computed(() => !!user.value)
+  const isAdmin = computed(() => user.value?.role === 'admin')
   const isConfigured = isFirebaseConfigured
 
   const displayName = computed(
@@ -83,8 +85,16 @@ export const useAuthStore = defineStore('auth', () => {
       return initPromise
     }
     initPromise = new Promise((resolve) => {
-      onAuthStateChanged(auth, (u) => {
-        user.value = mapUser(u)
+      onAuthStateChanged(auth, async (u) => {
+        let profile = null
+        if (u) {
+          try {
+            profile = await getUserProfile(u)
+          } catch (err) {
+            console.warn('Failed to load user profile from Firestore:', err)
+          }
+        }
+        user.value = u ? { ...mapUser(u), role: profile?.role || 'guest' } : null
         if (!initialized.value) {
           initialized.value = true
           resolve()
@@ -108,7 +118,8 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
-      await ensureUserProfile(cred.user)
+      const profile = await ensureUserProfile(cred.user)
+      user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -129,8 +140,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password)
       if (name) await updateProfile(cred.user, { displayName: name })
-      await ensureUserProfile(cred.user)
-      user.value = mapUser(cred.user)
+      const profile = await ensureUserProfile(cred.user)
+      user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -150,7 +161,8 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
     try {
       const cred = await signInWithPopup(auth, googleProvider)
-      await ensureUserProfile(cred.user)
+      const profile = await ensureUserProfile(cred.user)
+      user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -175,6 +187,7 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     initialized,
     isAuthenticated,
+    isAdmin,
     isConfigured,
     displayName,
     initials,

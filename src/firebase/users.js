@@ -8,6 +8,13 @@ import { db, isFirebaseConfigured } from './config'
 
 export const DEFAULT_ROLE = 'guest'
 
+export async function getUserProfile(user) {
+  if (!isFirebaseConfigured || !user?.uid) return null
+
+  const snap = await getDoc(doc(db, 'users', user.uid))
+  return snap.exists() ? { uid: user.uid, ...snap.data() } : null
+}
+
 /**
  * Create the user's Firestore profile if it does not exist yet, otherwise
  * refresh their `lastLoginAt`. The role is only set on creation so an
@@ -23,12 +30,17 @@ export async function ensureUserProfile(user) {
     const snap = await getDoc(ref)
 
     if (snap.exists()) {
-      await setDoc(
-        ref,
-        { lastLoginAt: serverTimestamp(), updatedAt: serverTimestamp() },
-        { merge: true }
-      )
-      return { uid: user.uid, ...snap.data() }
+      const profile = { uid: user.uid, ...snap.data() }
+      try {
+        await setDoc(
+          ref,
+          { lastLoginAt: serverTimestamp(), updatedAt: serverTimestamp() },
+          { merge: true }
+        )
+      } catch (err) {
+        console.warn('Failed to refresh user profile in Firestore:', err)
+      }
+      return profile
     }
 
     const profile = {
