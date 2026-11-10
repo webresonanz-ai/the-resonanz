@@ -11,6 +11,7 @@ import {
 import {
   preloadGoogleIdentityServices,
   uploadBannerToDrive,
+  uploadTicketDesignToDrive,
   ensureDriveAccessToken,
   hasValidAccessToken,
 } from '@/firebase/drive'
@@ -95,7 +96,9 @@ const notice = ref('')
 const form = ref({})
 const scheduleModalOpen = ref(false)
 const bannerFileInput = ref(null)
+const ticketDesignFileInput = ref(null)
 const uploadingBanner = ref(false)
+const uploadingTicketDesign = ref(false)
 const driveReady = ref(false)
 const driveFailed = ref(false)
 const driveConnected = ref(false)
@@ -126,6 +129,7 @@ function emptyForm(collectionName) {
     values.capacity = 0
     values.registrationCount = 0
     values.bannerURL = ''
+    values.ticketDesignURL = ''
     values.eventId = ''
   }
   if (collectionName === 'news') values.date = localDateTimeValue(new Date())
@@ -170,6 +174,7 @@ function beginEdit(record) {
   if (activeCollection.value === 'schedules') {
     form.value.registrationCount = record.registrationCount ?? 0
     form.value.bannerURL = record.bannerURL ?? ''
+    form.value.ticketDesignURL = record.ticketDesignURL ?? ''
   }
   error.value = ''
   notice.value = ''
@@ -212,7 +217,7 @@ function selectSection(key) {
   }
 }
 
-async function triggerBannerUpload() {
+async function triggerDriveUpload(fileInput) {
   error.value = ''
   notice.value = ''
   if (driveFailed.value) {
@@ -226,7 +231,7 @@ async function triggerBannerUpload() {
 
   // Already authorized — open the file picker directly from this click.
   if (driveConnected.value && hasValidAccessToken()) {
-    bannerFileInput.value?.click()
+    fileInput.value?.click()
     return
   }
 
@@ -235,9 +240,27 @@ async function triggerBannerUpload() {
   try {
     await ensureDriveAccessToken()
     driveConnected.value = true
-    notice.value = 'Connected to Google Drive — click again to choose an image.'
+    notice.value = 'Connected to Google Drive — click again to choose a file.'
   } catch (err) {
     error.value = err.message || 'Unable to authorize Google Drive.'
+  }
+}
+
+function triggerBannerUpload() {
+  return triggerDriveUpload(bannerFileInput)
+}
+
+function triggerTicketDesignUpload() {
+  return triggerDriveUpload(ticketDesignFileInput)
+}
+
+function ticketDesignPreviewURL(value) {
+  try {
+    const url = new URL(value)
+    const fileId = url.searchParams.get('id') || url.pathname.match(/\/file\/d\/([^/]+)/)?.[1]
+    return fileId ? `https://drive.google.com/file/d/${encodeURIComponent(fileId)}/preview` : value
+  } catch {
+    return value
   }
 }
 
@@ -261,12 +284,37 @@ async function handleBannerFile(event) {
   }
 }
 
+async function handleTicketDesignFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  uploadingTicketDesign.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    form.value.ticketDesignURL = await uploadTicketDesignToDrive(file)
+    notice.value = 'Ticket design uploaded to Google Drive.'
+  } catch (err) {
+    error.value = err.message || 'Unable to upload the ticket design.'
+    if (!hasValidAccessToken()) driveConnected.value = false
+  } finally {
+    uploadingTicketDesign.value = false
+  }
+}
+
 function validateSchedule() {
   if (activeCollection.value !== 'schedules') return true
 
   const banner = String(form.value.bannerURL || '').trim()
   if (banner && !/^https:\/\//i.test(banner)) {
     error.value = 'Banner URL must start with https://.'
+    return false
+  }
+
+  const ticketDesign = String(form.value.ticketDesignURL || '').trim()
+  if (ticketDesign && !/^https:\/\//i.test(ticketDesign)) {
+    error.value = 'Ticket design URL must start with https://.'
     return false
   }
 
@@ -305,6 +353,9 @@ function toFirestoreFields() {
     fields.date = Timestamp.fromDate(new Date(`${fields.date}T12:00:00`))
     fields.ticketURL = String(fields.ticketURL || '').trim()
     fields.bannerURL = String(fields.bannerURL || '').trim()
+    fields.ticketDesignURL = fields.type === 'Workshop'
+      ? String(fields.ticketDesignURL || '').trim()
+      : ''
     fields.capacity = Math.max(0, Math.floor(Number(fields.capacity) || 0))
     fields.registrationCount = Math.max(0, Math.floor(Number(fields.registrationCount) || 0))
     fields.eventId = fields.type === 'Workshop' ? String(fields.eventId || '').trim() : ''
@@ -571,6 +622,30 @@ onUnmounted(() => unsubscribe?.())
                   >{{ uploadingBanner ? 'Uploading…' : !driveReady ? (driveFailed ? 'Google Drive unavailable' : 'Loading Google…') : driveConnected ? 'Upload image to Google Drive' : 'Connect Google Drive' }}</button>
                   <span class="text-xs text-bone-500">or paste an image URL above</span>
                 </div>
+              </div>
+
+              <div v-if="form.type === 'Workshop'" class="rounded-xl border border-maroon-700/60 bg-maroon-950/40 p-3">
+                <label class="block text-[11px] sm:text-xs font-medium text-bone-400 mb-1.5">Ticket design</label>
+
+                <div v-if="form.ticketDesignURL" class="relative mb-2 overflow-hidden rounded-lg border border-maroon-700/60">
+                  <iframe
+                    :src="ticketDesignPreviewURL(form.ticketDesignURL)"
+                    title="Workshop ticket design PDF preview"
+                    class="w-full h-40 bg-maroon-950"
+                  ></iframe>
+                  <button type="button" class="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur text-xs text-bone-200 hover:bg-rose-900/80 transition-colors" @click="form.ticketDesignURL = ''">
+                    Remove
+                  </button>
+                </div>
+
+                <input ref="ticketDesignFileInput" type="file" accept="application/pdf,.pdf" class="hidden" @change="handleTicketDesignFile" />
+                <button
+                  type="button"
+                  :disabled="uploadingTicketDesign || !driveReady"
+                  class="px-3 py-1.5 rounded-lg border border-gold-500/40 text-xs font-medium text-gold-300 hover:bg-gold-500/10 transition-colors disabled:opacity-60"
+                  @click="triggerTicketDesignUpload"
+                >{{ uploadingTicketDesign ? 'Uploading…' : !driveReady ? (driveFailed ? 'Google Drive unavailable' : 'Loading Google…') : driveConnected ? 'Upload ticket design PDF to Google Drive' : 'Connect Google Drive' }}</button>
+                <p class="mt-1.5 text-xs text-bone-500">PDF files up to 5 MB are saved to the configured ticket folder.</p>
               </div>
 
               <div v-for="field in visibleFields" :key="field.key">

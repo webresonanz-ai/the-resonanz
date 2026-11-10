@@ -15,7 +15,9 @@
   "dependencies": {
     "@tailwindcss/vite": "^4.3.5",
     "firebase": "^11.10.0",
+    "pdf-lib": "^1.17.1",
     "pinia": "^4.0.3",
+    "qrcode": "^1.5.4",
     "tailwindcss": "^4.3.5",
     "vue": "^3.5.42",
     "vue-router": "^5.3.1"

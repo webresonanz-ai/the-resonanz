@@ -6,6 +6,7 @@ import {
   updateWorkshopRegistration,
   VOCAL_RANGES,
 } from '@/firebase/schedules'
+import { fetchDriveFile } from '@/firebase/drive'
 
 const {
   items: events,
@@ -21,6 +22,8 @@ const editing = ref(null)
 const form = ref({ name: '', vocalRange: '' })
 const formError = ref('')
 const saving = ref(false)
+const ticketDownloadError = ref('')
+const downloadingTicketId = ref('')
 const registrationUnsubs = new Map()
 
 const workshopEvents = computed(() => events.value.filter((event) => event.type === 'Workshop'))
@@ -32,6 +35,7 @@ const audiences = computed(() =>
       eventId: event.id,
       eventTitle: event.title,
       eventDate: event.date,
+      ticketDesignURL: event.ticketDesignURL || '',
     })),
   ),
 )
@@ -115,6 +119,109 @@ function initials(guest) {
   return base.slice(0, 2).toUpperCase()
 }
 
+function ticketFilename(guest) {
+  const base = `${guest.eventTitle || 'workshop'}-${guest.name || 'guest'}-${guest.ticketId || ''}`
+  return `${base.replace(/[<>:"/\\|?*]/g, '-').replace(/\s+/g, '-').slice(0, 150)}.pdf`
+}
+
+async function downloadTicket(guest) {
+  ticketDownloadError.value = ''
+  if (!guest.ticketDesignURL) {
+    ticketDownloadError.value = `Upload a ticket design for "${guest.eventTitle}" before downloading tickets.`
+    return
+  }
+  if (!guest.ticketId) {
+    ticketDownloadError.value = `No ticket ID is available for ${guest.name || 'this guest'}.`
+    return
+  }
+
+  downloadingTicketId.value = `${guest.eventId}-${guest.registrationId || guest.id}`
+  try {
+    const [designBlob, { PDFDocument, rgb, StandardFonts }, QRCode] = await Promise.all([
+      fetchDriveFile(guest.ticketDesignURL),
+      import('pdf-lib'),
+      import('qrcode'),
+    ])
+    const pdf = await PDFDocument.load(await designBlob.arrayBuffer())
+    const pages = pdf.getPages()
+    if (!pages.length) throw new Error('The ticket design PDF has no pages.')
+    for (let index = pages.length - 1; index > 0; index -= 1) pdf.removePage(index)
+
+    const page = pdf.getPages()[0]
+    const { width, height } = page.getSize()
+    const margin = width * 0.06
+    const contentWidth = width * 0.35
+    const contentCenterX = width - margin - contentWidth / 2
+    const nameSize = height * 0.04
+    const nameLineHeight = height * 0.048
+    const vocalRangeSize = height * 0.03
+    const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold)
+    const qrCodeDataUrl = await QRCode.toDataURL(guest.ticketId, {
+      errorCorrectionLevel: 'H',
+      margin: 1,
+      width: 400,
+    })
+    const qrCodeBytes = Uint8Array.from(
+      atob(qrCodeDataUrl.split(',')[1]),
+      (character) => character.charCodeAt(0),
+    )
+    const qrCode = await pdf.embedPng(qrCodeBytes)
+
+    const nameLines = []
+    let currentLine = ''
+    for (const word of (guest.name || 'Guest').split(/\s+/)) {
+      const candidate = currentLine ? `${currentLine} ${word}` : word
+      if (currentLine && boldFont.widthOfTextAtSize(candidate, nameSize) > contentWidth) {
+        nameLines.push(currentLine)
+        currentLine = word
+      } else {
+        currentLine = candidate
+      }
+    }
+    if (currentLine) nameLines.push(currentLine)
+
+    let textY = height - margin - nameSize
+    for (const line of nameLines) {
+      const lineWidth = boldFont.widthOfTextAtSize(line, nameSize)
+      page.drawText(line, {
+        x: contentCenterX - lineWidth / 2,
+        y: textY,
+        size: nameSize,
+        font: boldFont,
+        color: rgb(0, 0, 0),
+      })
+      textY -= nameLineHeight
+    }
+
+    textY -= height * 0.025
+    const vocalRange = guest.vocalRange || 'Not specified'
+    page.drawText(vocalRange, {
+      x: contentCenterX - boldFont.widthOfTextAtSize(vocalRange, vocalRangeSize) / 2,
+      y: textY,
+      size: vocalRangeSize,
+      font: boldFont,
+      color: rgb(0, 0, 0),
+    })
+
+    const qrSize = Math.min(width * 0.25, height * 0.22)
+    const qrX = contentCenterX - qrSize / 2
+    const qrY = textY - height * 0.04 - qrSize
+    page.drawImage(qrCode, { x: qrX, y: qrY, width: qrSize, height: qrSize })
+
+    const output = await pdf.save()
+    const objectUrl = URL.createObjectURL(new Blob([output], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = objectUrl
+    link.download = ticketFilename(guest)
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+  } catch (err) {
+    ticketDownloadError.value = err.message || 'Unable to generate this ticket PDF.'
+  } finally {
+    downloadingTicketId.value = ''
+  }
+}
+
 function openEdit(guest) {
   editing.value = guest
   form.value = { name: guest.name || '', vocalRange: guest.vocalRange || '' }
@@ -177,6 +284,13 @@ onUnmounted(() => {
       class="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-3 sm:p-4 text-sm text-emerald-200"
     >
       {{ notice }}
+    </div>
+    <div
+      v-if="ticketDownloadError"
+      role="alert"
+      class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200"
+    >
+      {{ ticketDownloadError }}
     </div>
 
     <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
@@ -248,6 +362,15 @@ onUnmounted(() => {
               }}<template v-if="guest.eventDate"> · {{ formatDate(guest.eventDate) }}</template>
             </p>
           </div>
+          <button
+            type="button"
+            :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId)"
+            :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
+            class="px-3 py-1.5 rounded-lg border border-gold-500/30 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50"
+            @click="downloadTicket(guest)"
+          >
+            {{ downloadingTicketId === `${guest.eventId}-${guest.registrationId || guest.id}` ? 'Generating…' : 'Download ticket PDF' }}
+          </button>
           <button
             type="button"
             class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300"

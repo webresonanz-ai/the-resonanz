@@ -29,6 +29,16 @@ export default defineConfig({
               priority: 10,
             },
             {
+              name: 'ticket-pdf',
+              test: /node_modules[\\/](?:jspdf|fflate|fast-png|@babel)[\\/]/,
+              priority: 5,
+            },
+            {
+              name: 'ticket-qr',
+              test: /node_modules[\\/](?:qrcode|dijkstrajs|pngjs)[\\/]/,
+              priority: 5,
+            },
+            {
               name: 'vendor',
               test: /node_modules[\\/]/,
               priority: 1,
