@@ -1,13 +1,17 @@
 <script setup>
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { useContentCollection } from '@/composables/useContentCollection'
+import { useAuthStore } from '@/stores/auth'
 import {
+  importWorkshopRegistrations,
+  normalizeVocalRange,
   subscribeToWorkshopRegistrations,
   updateWorkshopRegistration,
   VOCAL_RANGES,
 } from '@/firebase/schedules'
 import { fetchDriveFile } from '@/firebase/drive'
 
+const authStore = useAuthStore()
 const {
   items: events,
   loading: eventsLoading,
@@ -28,8 +32,51 @@ const saving = ref(false)
 const ticketDownloadError = ref('')
 const downloadingTicketId = ref('')
 const registrationUnsubs = new Map()
+const importOpen = ref(false)
+const importStep = ref(1)
+const importEventId = ref('')
+const importFile = ref(null)
+const importFileName = ref('')
+const importFileInput = ref(null)
+const importError = ref('')
+const importProgress = ref('')
+const importSummary = ref(null)
+const importing = ref(false)
+const EMAIL_PATTERN = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/
 
 const workshopEvents = computed(() => events.value.filter((event) => event.type === 'Workshop'))
+
+const importEvent = computed(
+  () => workshopEvents.value.find((event) => event.id === importEventId.value) || null,
+)
+
+const importSpotsLeft = computed(() => {
+  if (!importEvent.value) return 0
+  return Math.max(
+    0,
+    (Number(importEvent.value.capacity) || 0) - (Number(importEvent.value.registrationCount) || 0),
+  )
+})
+
+const importIssues = computed(() => {
+  if (!importSummary.value) return []
+  const invalid = importSummary.value.invalidRows.map((row) => ({
+    row: row.rowNumber,
+    name: row.name,
+    message: row.message,
+  }))
+  const failed = importSummary.value.errors.map((row) => ({
+    row: row.row,
+    name: row.name,
+    message: row.message,
+  }))
+  return [...invalid, ...failed].sort((a, b) => a.row - b.row)
+})
+
+const importSkipped = computed(() => {
+  if (!importSummary.value) return 0
+  return importSummary.value.invalidRows.length + importSummary.value.failed
+})
 
 const audiences = computed(() =>
   workshopEvents.value.flatMap((event) =>
@@ -161,6 +208,20 @@ function initials(guest) {
   return base.slice(0, 2).toUpperCase()
 }
 
+function ticketGuestName(name) {
+  const value = String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+  if (!value) return 'Guest'
+  if (value.length <= 25) return value
+
+  const clipped = value.slice(0, 25)
+  if (value[25] === ' ') return clipped
+
+  const lastSpace = clipped.lastIndexOf(' ')
+  return (lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped).trim() || 'Guest'
+}
+
 function ticketFilename(guest) {
   const base = `${guest.eventTitle || 'workshop'}-${guest.name || 'guest'}-${guest.ticketId || ''}`
   return `${base.replace(/[<>:"/\\|?*]/g, '-').replace(/\s+/g, '-').slice(0, 150)}.pdf`
@@ -211,7 +272,7 @@ async function downloadTicket(guest) {
 
     const nameLines = []
     let currentLine = ''
-    for (const word of (guest.name || 'Guest').split(/\s+/)) {
+    for (const word of ticketGuestName(guest.name).split(/\s+/)) {
       const candidate = currentLine ? `${currentLine} ${word}` : word
       if (currentLine && boldFont.widthOfTextAtSize(candidate, nameSize) > contentWidth) {
         nameLines.push(currentLine)
@@ -305,6 +366,166 @@ async function saveGuest() {
   }
 }
 
+function resetImport() {
+  importStep.value = 1
+  importEventId.value = ''
+  importFile.value = null
+  importFileName.value = ''
+  importError.value = ''
+  importProgress.value = ''
+  importSummary.value = null
+  importing.value = false
+  if (importFileInput.value) importFileInput.value.value = ''
+}
+
+function openImport() {
+  if (!authStore.isAdmin) return
+  resetImport()
+  importOpen.value = true
+}
+
+function closeImport() {
+  if (importing.value) return
+  importOpen.value = false
+}
+
+function continueImport() {
+  importError.value = ''
+  if (!importEventId.value) {
+    importError.value = 'Choose the workshop to import guests into.'
+    return
+  }
+  importStep.value = 2
+}
+
+function onImportFileChange(event) {
+  const file = event.target.files?.[0] || null
+  importError.value = ''
+  importSummary.value = null
+  importProgress.value = ''
+  importFile.value = file
+  importFileName.value = file?.name || ''
+}
+
+function importAnother() {
+  importSummary.value = null
+  importFile.value = null
+  importFileName.value = ''
+  importError.value = ''
+  importProgress.value = ''
+  if (importFileInput.value) importFileInput.value.value = ''
+}
+
+function normalizeHeader(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ')
+}
+
+async function parseImportFile(file) {
+  const XLSX = await import('xlsx')
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' })
+  const sheetName = workbook.SheetNames[0]
+  if (!sheetName) throw new Error('The spreadsheet has no sheets.')
+
+  const matrix = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    header: 1,
+    defval: '',
+    blankrows: false,
+    raw: false,
+  })
+  if (!matrix.length) throw new Error('The selected spreadsheet is empty.')
+
+  const headers = matrix[0].map(normalizeHeader)
+  const nameIndex = headers.indexOf('name')
+  const emailIndex = headers.indexOf('email')
+  const vocalRangeIndex = headers.findIndex((header) =>
+    ['vocal range', 'vocalrange', 'voice', 'range'].includes(header),
+  )
+
+  if (nameIndex === -1 || emailIndex === -1 || vocalRangeIndex === -1) {
+    throw new Error('The first row must include "Name", "Vocal Range" and "Email" columns.')
+  }
+
+  const validRows = []
+  const invalidRows = []
+
+  for (let index = 1; index < matrix.length; index += 1) {
+    const cells = matrix[index]
+    const name = String(cells[nameIndex] ?? '').trim()
+    const email = String(cells[emailIndex] ?? '').trim().toLowerCase()
+    const vocalRangeRaw = String(cells[vocalRangeIndex] ?? '').trim()
+
+    if (!name && !email && !vocalRangeRaw) continue
+
+    const rowNumber = index + 1
+    const vocalRange = normalizeVocalRange(vocalRangeRaw)
+    const problems = []
+
+    if (!name) problems.push('name is missing')
+    else if (name.length > 100) problems.push('name is longer than 100 characters')
+
+    if (!email) problems.push('email is missing')
+    else if (email.length > 254 || !EMAIL_PATTERN.test(email)) problems.push('email is invalid')
+
+    if (!vocalRangeRaw) problems.push('vocal range is missing')
+    else if (!vocalRange) problems.push(`vocal range "${vocalRangeRaw}" is not recognised`)
+
+    if (problems.length) {
+      invalidRows.push({ rowNumber, name, email, message: problems.join('; ') })
+    } else {
+      validRows.push({ rowNumber, name, email, vocalRange })
+    }
+  }
+
+  if (!validRows.length && !invalidRows.length) {
+    throw new Error('No audience rows were found below the header row.')
+  }
+
+  return { validRows, invalidRows }
+}
+
+async function runImport() {
+  if (!importEvent.value || importing.value) return
+  importError.value = ''
+  importSummary.value = null
+
+  if (!importFile.value) {
+    importError.value = 'Choose an Excel file to import.'
+    return
+  }
+
+  importing.value = true
+  importProgress.value = 'Reading file…'
+
+  try {
+    const { validRows, invalidRows } = await parseImportFile(importFile.value)
+    const summary = await importWorkshopRegistrations(
+      importEvent.value.id,
+      validRows,
+      (progress) => {
+        importProgress.value = `Importing ${progress.processed} of ${progress.total}…`
+      },
+    )
+
+    importSummary.value = {
+      ...summary,
+      invalidRows,
+      totalRows: validRows.length + invalidRows.length,
+    }
+
+    if (summary.imported) {
+      notice.value = `Imported ${summary.imported} guest${summary.imported === 1 ? '' : 's'} into "${importEvent.value.title}".`
+    }
+  } catch (err) {
+    importError.value = err.message || 'Unable to import this spreadsheet.'
+  } finally {
+    importing.value = false
+    importProgress.value = ''
+  }
+}
+
 onUnmounted(() => {
   for (const unsubscribe of registrationUnsubs.values()) unsubscribe()
   registrationUnsubs.clear()
@@ -354,6 +575,14 @@ onUnmounted(() => {
           </p>
         </div>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <button
+            v-if="authStore.isAdmin"
+            type="button"
+            class="w-full sm:w-auto rounded-lg bg-gold-500 px-3 py-2 text-sm font-semibold text-maroon-950 hover:bg-gold-400"
+            @click="openImport"
+          >
+            Import Excel
+          </button>
           <label class="sr-only" for="audience-event-filter">Filter by workshop</label>
           <select
             id="audience-event-filter"
@@ -667,6 +896,222 @@ onUnmounted(() => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="importOpen" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeImport"></div>
+
+          <div
+            class="relative w-full max-w-lg max-h-[90vh] overflow-y-auto rounded-2xl border border-maroon-700/60 bg-maroon-900 p-4 sm:p-6 shadow-2xl shadow-black/60 animate-scale-in"
+          >
+            <div class="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <p class="text-xs uppercase tracking-[0.25em] text-gold-400/80 mb-1">Audiences</p>
+                <h2 class="text-xl font-serif text-bone-100">Import guests from Excel</h2>
+              </div>
+              <button
+                type="button"
+                class="p-2 rounded-lg text-bone-400 hover:text-gold-300 hover:bg-maroon-800/60 transition-colors disabled:opacity-40"
+                aria-label="Close"
+                :disabled="importing"
+                @click="closeImport"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                    d="M6 18L18 6M6 6l12 12"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            <div class="mb-5 flex items-center gap-2 text-[11px] uppercase tracking-wider">
+              <span :class="importStep === 1 ? 'text-gold-300' : 'text-bone-500'">
+                1. Workshop
+              </span>
+              <span class="text-bone-600">/</span>
+              <span :class="importStep === 2 ? 'text-gold-300' : 'text-bone-500'">2. Excel file</span>
+            </div>
+
+            <template v-if="importStep === 1">
+              <div
+                v-if="!workshopEvents.length"
+                class="rounded-xl border border-maroon-700/60 bg-maroon-950/40 p-4 text-sm text-bone-400"
+              >
+                No workshop events yet. Add a workshop in the Schedules section before importing
+                guests.
+              </div>
+              <template v-else>
+                <div>
+                  <label class="block text-xs font-medium text-bone-400 mb-1.5" for="import-event">
+                    Event schedule
+                  </label>
+                  <select
+                    id="import-event"
+                    v-model="importEventId"
+                    class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60"
+                  >
+                    <option value="" disabled>Select a workshop</option>
+                    <option v-for="event in workshopEvents" :key="event.id" :value="event.id">
+                      {{ event.title }} — {{ formatDate(event.date) }}
+                    </option>
+                  </select>
+                  <p
+                    v-if="importEvent"
+                    class="mt-2 text-xs"
+                    :class="importSpotsLeft ? 'text-bone-500' : 'text-rose-300'"
+                  >
+                    {{ importSpotsLeft }} spot{{ importSpotsLeft === 1 ? '' : 's' }} left ·
+                    {{ Number(importEvent.registrationCount) || 0 }} /
+                    {{ Number(importEvent.capacity) || 0 }} registered
+                  </p>
+                </div>
+
+                <div
+                  v-if="importError"
+                  role="alert"
+                  class="mt-4 rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 text-sm text-rose-200"
+                >
+                  {{ importError }}
+                </div>
+
+                <div class="flex gap-3 pt-5">
+                  <button
+                    type="button"
+                    :disabled="!importEventId"
+                    class="flex-1 rounded-lg bg-gold-500 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-maroon-950 hover:bg-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="continueImport"
+                  >
+                    Continue
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg border border-maroon-700/60 px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-bone-300 hover:text-bone-100"
+                    @click="closeImport"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </template>
+            </template>
+
+            <template v-else>
+              <div
+                class="mb-4 rounded-xl border border-maroon-700/60 bg-maroon-950/40 px-3 py-2 text-sm text-bone-300"
+              >
+                <span class="text-bone-500">Workshop </span>{{ importEvent?.title }}
+              </div>
+
+              <template v-if="importSummary">
+                <div
+                  class="rounded-xl border p-3 text-sm"
+                  :class="
+                    importSummary.imported
+                      ? 'border-emerald-700/40 bg-emerald-950/20 text-emerald-200'
+                      : 'border-rose-700/50 bg-rose-950/30 text-rose-200'
+                  "
+                >
+                  Imported {{ importSummary.imported }} of {{ importSummary.totalRows }} row{{
+                    importSummary.totalRows === 1 ? '' : 's'
+                  }}.
+                </div>
+
+                <div
+                  v-if="importSkipped"
+                  class="mt-3 rounded-xl border border-gold-500/25 bg-gold-500/5 p-3 text-xs text-gold-100"
+                >
+                  <p class="font-medium text-gold-200">
+                    {{ importSkipped }} row{{ importSkipped === 1 ? '' : 's' }} skipped
+                  </p>
+                  <ul class="mt-2 max-h-44 space-y-1 overflow-y-auto">
+                    <li v-for="issue in importIssues" :key="`${issue.row}-${issue.message}`">
+                      <span class="font-mono text-gold-300/80">Row {{ issue.row }}</span>
+                      <span v-if="issue.name"> · {{ issue.name }}</span>
+                      <span class="text-gold-200/80"> — {{ issue.message }}</span>
+                    </li>
+                  </ul>
+                </div>
+
+                <div class="flex gap-3 pt-5">
+                  <button
+                    type="button"
+                    class="flex-1 rounded-lg border border-gold-500/30 px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-gold-300 hover:bg-gold-500/10"
+                    @click="importAnother"
+                  >
+                    Import another file
+                  </button>
+                  <button
+                    type="button"
+                    class="rounded-lg bg-gold-500 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-maroon-950 hover:bg-gold-400"
+                    @click="closeImport"
+                  >
+                    Done
+                  </button>
+                </div>
+              </template>
+
+              <template v-else>
+                <div>
+                  <label class="block text-xs font-medium text-bone-400 mb-1.5" for="import-file">
+                    Excel file
+                  </label>
+                  <input
+                    id="import-file"
+                    ref="importFileInput"
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    class="block w-full text-sm text-bone-400 file:mr-3 file:rounded-lg file:border-0 file:bg-gold-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-maroon-950 hover:file:bg-gold-400"
+                    @change="onImportFileChange"
+                  />
+                  <p v-if="importFileName" class="mt-2 text-xs text-bone-300 break-all">
+                    {{ importFileName }}
+                  </p>
+                  <p class="mt-2 text-xs text-bone-500">
+                    The first row must contain the columns
+                    <span class="text-bone-300">Name</span>,
+                    <span class="text-bone-300">Vocal Range</span> and
+                    <span class="text-bone-300">Email</span>. Supported vocal ranges:
+                    {{ VOCAL_RANGES.join(', ') }}.
+                  </p>
+                </div>
+
+                <div
+                  v-if="importError"
+                  role="alert"
+                  class="mt-4 rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 text-sm text-rose-200"
+                >
+                  {{ importError }}
+                </div>
+
+                <p v-if="importProgress" class="mt-3 text-sm text-bone-300">{{ importProgress }}</p>
+
+                <div class="flex gap-3 pt-5">
+                  <button
+                    type="button"
+                    :disabled="importing || !importFile"
+                    class="flex-1 rounded-lg bg-gold-500 px-3 py-2 sm:px-4 sm:py-2.5 text-sm font-semibold text-maroon-950 hover:bg-gold-400 disabled:cursor-not-allowed disabled:opacity-50"
+                    @click="runImport"
+                  >
+                    {{ importing ? 'Importing…' : 'Import guests' }}
+                  </button>
+                  <button
+                    type="button"
+                    :disabled="importing"
+                    class="rounded-lg border border-maroon-700/60 px-3 py-2 sm:px-4 sm:py-2.5 text-sm text-bone-300 hover:text-bone-100 disabled:opacity-40"
+                    @click="importStep = 1"
+                  >
+                    Back
+                  </button>
+                </div>
+              </template>
+            </template>
           </div>
         </div>
       </Transition>

@@ -39,6 +39,11 @@ export default defineConfig({
               priority: 5,
             },
             {
+              name: 'xlsx',
+              test: /node_modules[\\/](?:xlsx|cfb|ssf|codepage)[\\/]/,
+              priority: 5,
+            },
+            {
               name: 'vendor',
               test: /node_modules[\\/]/,
               priority: 1,

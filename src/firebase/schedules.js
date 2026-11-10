@@ -27,6 +27,19 @@ export const VOCAL_RANGES = [
   'Bass',
 ]
 
+function vocalRangeKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_-]+/g, ' ')
+}
+
+export function normalizeVocalRange(value) {
+  const key = vocalRangeKey(value)
+  if (!key) return ''
+  return VOCAL_RANGES.find((range) => vocalRangeKey(range) === key) || ''
+}
+
 const TICKET_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 
 function randomTicketSuffix(length = 4) {
@@ -163,6 +176,42 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
   })
 
   return { ticketId, registrationId }
+}
+
+/**
+ * Import validated rows one by one through the normal registration path so
+ * duplicate checks, counters, tickets and capacity limits stay consistent.
+ * Rows are processed sequentially to avoid counter races.
+ */
+export async function importWorkshopRegistrations(eventId, rows, onProgress) {
+  const summary = { total: rows.length, imported: 0, failed: 0, errors: [] }
+
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]
+    try {
+      await registerForWorkshop(eventId, {
+        name: row.name,
+        email: row.email,
+        vocalRange: row.vocalRange,
+      })
+      summary.imported += 1
+    } catch (err) {
+      summary.failed += 1
+      summary.errors.push({
+        row: row.rowNumber,
+        name: row.name,
+        email: row.email,
+        message:
+          err?.code === 'permission-denied'
+            ? 'This email is already registered, or the workshop is full.'
+            : err?.message || 'Unable to import this row.',
+      })
+    }
+
+    onProgress?.({ ...summary, processed: index + 1 })
+  }
+
+  return summary
 }
 
 export function subscribeToWorkshopRegistrations(eventId, onData, onError) {
