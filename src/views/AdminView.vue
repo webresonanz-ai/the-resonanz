@@ -129,6 +129,7 @@ function emptyForm(collectionName) {
     values.bannerURL = ''
     values.ticketDesignURL = ''
     values.eventId = ''
+    values.registrationOpen = true
   }
   if (collectionName === 'news') values.date = localDateTimeValue(new Date())
   return values
@@ -173,6 +174,7 @@ function beginEdit(record) {
     form.value.registrationCount = record.registrationCount ?? 0
     form.value.bannerURL = record.bannerURL ?? ''
     form.value.ticketDesignURL = record.ticketDesignURL ?? ''
+    form.value.registrationOpen = record.registrationOpen ?? true
   }
   error.value = ''
   notice.value = ''
@@ -339,6 +341,7 @@ function toFirestoreFields() {
     fields.capacity = Math.max(0, Math.floor(Number(fields.capacity) || 0))
     fields.registrationCount = Math.max(0, Math.floor(Number(fields.registrationCount) || 0))
     fields.eventId = fields.type === 'Workshop' ? String(fields.eventId || '').trim() : ''
+    fields.registrationOpen = fields.type === 'Workshop' && Boolean(fields.registrationOpen)
     if (fields.type !== 'Concert') fields.ticketURL = ''
   }
   if (activeCollection.value === 'news') {
@@ -595,6 +598,26 @@ onUnmounted(() => unsubscribe?.())
               </div>
 
               <div v-if="form.type === 'Workshop'" class="rounded-xl border border-maroon-700/60 bg-maroon-950/40 p-3">
+                <div class="mb-3 flex items-center justify-between gap-4 rounded-lg border border-maroon-700/50 bg-maroon-900/50 px-3 py-3">
+                  <div>
+                    <p class="text-sm font-medium text-bone-200">Workshop registration</p>
+                    <p class="mt-0.5 text-xs text-bone-500">{{ form.registrationOpen ? 'Guests can register while spaces are available.' : 'Registration is closed for this workshop.' }}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    :aria-checked="form.registrationOpen"
+                    :aria-label="form.registrationOpen ? 'Close workshop registration' : 'Open workshop registration'"
+                    class="relative h-7 w-12 shrink-0 rounded-full border transition-colors focus:outline-none focus:ring-2 focus:ring-gold-400/60"
+                    :class="form.registrationOpen ? 'border-gold-400/60 bg-gold-500/80' : 'border-maroon-600 bg-maroon-800'"
+                    @click="form.registrationOpen = !form.registrationOpen"
+                  >
+                    <span
+                      class="absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-bone-100 shadow-md transition-transform duration-200 ease-out"
+                      :class="form.registrationOpen ? 'translate-x-6' : 'translate-x-0'"
+                    ></span>
+                  </button>
+                </div>
                 <label class="block text-[11px] sm:text-xs font-medium text-bone-400 mb-1.5">Ticket design</label>
 
                 <div v-if="form.ticketDesignURL" class="relative mb-2 overflow-hidden rounded-lg border border-maroon-700/60">

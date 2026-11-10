@@ -122,6 +122,9 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
     if (event.type !== 'Workshop') {
       throw new Error('This event is not open for workshop registration.')
     }
+    if (event.registrationOpen === false) {
+      throw new Error('Registration for this workshop is closed.')
+    }
 
     if (lookupSnap.exists()) {
       throw new Error('This email is already registered for this workshop.')

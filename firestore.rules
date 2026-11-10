@@ -17,7 +17,7 @@ service cloud.firestore {
     // Courses: name, duration, level, fee.
     // Schedules: title, type, date, startTime, endTime, venue, ticketURL,
     // bannerURL, ticketDesignURL, capacity, registrationCount, eventId
-    // (workshops only).
+    // (workshops only), with an optional registrationOpen boolean.
     // Workshop registrations are stored
     // at schedules/{eventId}/registrations/{registrationId} and increment
     // registrationCount. Registration ids come from counters/registrations.
@@ -102,7 +102,7 @@ service cloud.firestore {
         ])
         && hasOnlyAllowedFields(data, [
           'uid', 'email', 'displayName', 'photoURL', 'provider', 'role',
-          'createdAt', 'updatedAt', 'lastLoginAt'
+          'createdAt', 'updatedAt', 'lastLoginAt', 'activeDeviceId'
         ])
         && data.uid is string
         && isValidEmail(data.email)
@@ -112,7 +112,10 @@ service cloud.firestore {
         && data.role in ['guest', 'admin', 'scanner']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp
-        && data.lastLoginAt is timestamp;
+        && data.lastLoginAt is timestamp
+        && (!('activeDeviceId' in data)
+          || data.activeDeviceId == null
+          || (data.activeDeviceId is string && data.activeDeviceId.size() <= 100));
     }
 
     function isValidCourse(data) {
@@ -139,7 +142,7 @@ service cloud.firestore {
         ])
         && hasOnlyAllowedFields(data, [
           'title', 'type', 'date', 'startTime', 'endTime', 'venue',
-          'ticketURL', 'bannerURL', 'ticketDesignURL', 'capacity', 'registrationCount', 'eventId',
+          'ticketURL', 'bannerURL', 'ticketDesignURL', 'capacity', 'registrationCount', 'eventId', 'registrationOpen',
           'createdAt', 'updatedAt'
         ])
         && isBoundedString(data, 'title', 1, 120)
@@ -155,6 +158,7 @@ service cloud.firestore {
         && isValidUrl(data.bannerURL)
         && (!('ticketDesignURL' in data) || isValidUrl(data.ticketDesignURL))
         && (!('eventId' in data) || isOptionalString(data, 'eventId', 100))
+        && (!('registrationOpen' in data) || data.registrationOpen is bool)
         && data.capacity is int
         && data.capacity >= 0
         && data.capacity <= 100000
@@ -204,6 +208,7 @@ service cloud.firestore {
 
       return before.type == 'Workshop'
         && after.type == 'Workshop'
+        && before.get('registrationOpen', true) == true
         && before.get('capacity', 0) >= 1
         && after.get('registrationCount', 0) == before.get('registrationCount', 0) + 1
         && after.get('registrationCount', 0) <= before.get('capacity', 0)
@@ -332,8 +337,15 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
         && request.resource.data.lastLoginAt == request.time
+        && (
+          request.resource.data.activeDeviceId == resource.data.get('activeDeviceId', null)
+          || (resource.data.get('activeDeviceId', null) == null
+            && request.resource.data.activeDeviceId is string)
+          || (request.resource.data.activeDeviceId == null
+            && resource.data.get('activeDeviceId', null) is string)
+        )
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'updatedAt', 'lastLoginAt'
+          'updatedAt', 'lastLoginAt', 'activeDeviceId'
         ]);
 
       allow delete: if false;

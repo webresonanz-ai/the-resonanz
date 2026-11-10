@@ -3,10 +3,60 @@
 // Stores each authenticated user under `users/{uid}`.
 // New users always start with the `guest` role.
 // ============================================================
-import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore'
+import { doc, getDoc, setDoc, serverTimestamp, runTransaction } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './config'
 
 export const DEFAULT_ROLE = 'guest'
+
+const DEVICE_ID_KEY = 'resonanz.deviceId'
+
+function getDeviceId() {
+  let id = localStorage.getItem(DEVICE_ID_KEY)
+  if (!id) {
+    id = crypto.randomUUID()
+    localStorage.setItem(DEVICE_ID_KEY, id)
+  }
+  return id
+}
+
+/** Claim the account for this browser. Concurrent claims are serialized by Firestore. */
+export async function claimUserSession(user) {
+  if (!isFirebaseConfigured || !user?.uid) return false
+
+  const deviceId = getDeviceId()
+  const ref = doc(db, 'users', user.uid)
+  return runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref)
+    if (!snap.exists()) return false
+
+    const activeDeviceId = snap.data().activeDeviceId
+    if (activeDeviceId && activeDeviceId !== deviceId) return false
+
+    transaction.update(ref, {
+      activeDeviceId: deviceId,
+      updatedAt: serverTimestamp(),
+      lastLoginAt: serverTimestamp(),
+    })
+    return true
+  })
+}
+
+export async function releaseUserSession(user) {
+  if (!isFirebaseConfigured || !user?.uid) return
+
+  const deviceId = getDeviceId()
+  const ref = doc(db, 'users', user.uid)
+  await runTransaction(db, async (transaction) => {
+    const snap = await transaction.get(ref)
+    if (snap.exists() && snap.data().activeDeviceId === deviceId) {
+      transaction.update(ref, {
+        activeDeviceId: null,
+        updatedAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      })
+    }
+  })
+}
 
 export async function getUserProfile(user) {
   if (!isFirebaseConfigured || !user?.uid) return null
@@ -53,6 +103,7 @@ export async function ensureUserProfile(user) {
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
       lastLoginAt: serverTimestamp(),
+      activeDeviceId: null,
     }
 
     await setDoc(ref, profile)

@@ -116,8 +116,26 @@ const visibleNavigation = computed(() =>
 </script>
 
 <template>
+  <div v-if="!authStore.initialized" class="relative flex min-h-screen items-center justify-center overflow-hidden bg-maroon-950 text-bone-200">
+    <div class="pointer-events-none absolute -left-32 -top-32 h-96 w-96 rounded-full bg-maroon-500/15 blur-[120px]"></div>
+    <div class="pointer-events-none absolute -bottom-40 -right-20 h-[28rem] w-[28rem] rounded-full bg-gold-500/[0.07] blur-[140px]"></div>
+    <div class="relative flex flex-col items-center px-6 text-center">
+      <div class="relative flex h-28 w-28 items-center justify-center">
+        <div class="absolute inset-0 rounded-full border border-gold-500/20"></div>
+        <div class="absolute inset-1 rounded-full border border-transparent border-t-gold-300 animate-spin"></div>
+        <div class="absolute inset-3 rounded-full border border-transparent border-b-gold-500/50 animate-spin" style="animation-direction: reverse; animation-duration: 2.6s"></div>
+        <span class="font-serif text-5xl font-semibold text-gold-gradient">R</span>
+      </div>
+      <p class="mt-8 text-[10px] uppercase tracking-[0.5em] text-gold-400/80">The Resonanz Academy</p>
+      <h1 class="mt-3 font-serif text-2xl sm:text-3xl text-bone-100">A moment before the music</h1>
+      <p class="mt-3 text-sm text-bone-500">Preparing your space</p>
+      <div class="mt-8 h-px w-32 overflow-hidden bg-maroon-700/70">
+        <div class="h-full w-1/2 animate-pulse bg-gradient-to-r from-transparent via-gold-400 to-transparent"></div>
+      </div>
+    </div>
+  </div>
   <!-- ===== Auth layout (full-screen, no shell) ===== -->
-  <div v-if="isAuthLayout" class="min-h-screen bg-maroon-950">
+  <div v-else-if="isAuthLayout" class="min-h-screen bg-maroon-950">
     <RouterView v-slot="{ Component }">
       <Transition name="page" mode="out-in">
         <component :is="Component" />

@@ -9,7 +9,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import { auth, googleProvider, isFirebaseConfigured } from '@/firebase/config'
-import { ensureUserProfile, getUserProfile } from '@/firebase/users'
+import { claimUserSession, ensureUserProfile, getUserProfile, releaseUserSession } from '@/firebase/users'
 
 /* ---- helpers ---- */
 function mapUser(u) {
@@ -26,6 +26,7 @@ function mapUser(u) {
 }
 
 const authErrorMessages = {
+  'session/device-in-use': 'This account is already active on another device. Please log out there first, then try again.',
   'auth/invalid-credential': 'Invalid email or password.',
   'auth/wrong-password': 'Incorrect password.',
   'auth/user-not-found': 'No account found with this email.',
@@ -94,8 +95,26 @@ export const useAuthStore = defineStore('auth', () => {
         if (u) {
           try {
             profile = await getUserProfile(u)
+            if (profile && !(await claimUserSession(u))) {
+              await signOut(auth)
+              user.value = null
+              error.value = authErrorMessages['session/device-in-use']
+              if (!initialized.value) {
+                initialized.value = true
+                resolve()
+              }
+              return
+            }
           } catch (err) {
             console.warn('Failed to load user profile from Firestore:', err)
+            await signOut(auth)
+            user.value = null
+            error.value = 'Unable to verify this account session. Please try again.'
+            if (!initialized.value) {
+              initialized.value = true
+              resolve()
+            }
+            return
           }
         }
         user.value = u ? { ...mapUser(u), role: profile?.role || 'guest' } : null
@@ -123,6 +142,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const cred = await signInWithEmailAndPassword(auth, email, password)
       const profile = await ensureUserProfile(cred.user)
+      if (!(await claimUserSession(cred.user))) {
+        await signOut(auth)
+        throw { code: 'session/device-in-use' }
+      }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
@@ -145,6 +168,10 @@ export const useAuthStore = defineStore('auth', () => {
       const cred = await createUserWithEmailAndPassword(auth, email, password)
       if (name) await updateProfile(cred.user, { displayName: name })
       const profile = await ensureUserProfile(cred.user)
+      if (!(await claimUserSession(cred.user))) {
+        await signOut(auth)
+        throw { code: 'session/device-in-use' }
+      }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
@@ -166,6 +193,10 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const cred = await signInWithPopup(auth, googleProvider)
       const profile = await ensureUserProfile(cred.user)
+      if (!(await claimUserSession(cred.user))) {
+        await signOut(auth)
+        throw { code: 'session/device-in-use' }
+      }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
       return true
     } catch (err) {
@@ -181,6 +212,7 @@ export const useAuthStore = defineStore('auth', () => {
       user.value = null
       return
     }
+    if (auth.currentUser) await releaseUserSession(auth.currentUser)
     await signOut(auth)
     user.value = null
   }

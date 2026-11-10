@@ -1,38 +1,84 @@
 <script setup>
-import { useCountUp } from '@/composables/useCountUp'
+import { computed } from 'vue'
+import { useContentCollection } from '@/composables/useContentCollection'
 
-const students = useCountUp(124, { delay: 150 })
-const recitals = useCountUp(3, { delay: 300 })
-const enrollments = useCountUp(12, { delay: 450 })
-const faculty = useCountUp(8, { delay: 600 })
+const { items: courseItems, loading: coursesLoading, error: coursesError } = useContentCollection('courses', 'name', 'asc')
+const { items: scheduleItems, loading: schedulesLoading, error: schedulesError } = useContentCollection('schedules', 'date', 'asc')
+const { items: teacherItems, loading: teachersLoading, error: teachersError } = useContentCollection('teachers', 'name', 'asc')
+const { items: newsItems, loading: newsLoading, error: newsError } = useContentCollection('news', 'date', 'desc')
+const loading = computed(() => coursesLoading.value || schedulesLoading.value || teachersLoading.value || newsLoading.value)
+const loadError = computed(() => coursesError.value || schedulesError.value || teachersError.value || newsError.value)
 
-const announcements = [
-  {
-    title: 'Spring Gala Rehearsal Schedule Updated',
-    body: 'New timings have been posted for all ensembles. Please review before Friday.',
-    date: '2 days ago',
-  },
-  {
-    title: 'Masterclass: Piano Interpretation with Dr. Aris',
-    body: 'A special guest session exploring romantic-era phrasing, next Friday at 15:00.',
-    date: '5 days ago',
-  },
-  {
-    title: 'New Practice Rooms Now Available',
-    body: 'Rooms 7–10 on the third floor are open for booking through the Schedules tab.',
-    date: '1 week ago',
-  },
-]
+function asDate(value) {
+  if (!value) return null
+  const date = value?.toDate ? value.toDate() : new Date(value)
+  return Number.isNaN(date.getTime()) ? null : date
+}
 
-const upcoming = [
-  { title: 'Spring Student Recital', when: 'May 15 · 18:00', place: 'Main Auditorium' },
-  { title: 'Masterclass: Strings', when: 'May 22 · 14:00', place: 'Room 302' },
-  { title: 'Faculty Concert', when: 'Jun 03 · 19:30', place: 'Main Auditorium' },
-]
+function eventStart(event) {
+  const date = asDate(event.date)
+  if (!date) return null
+  const [hours, minutes] = (event.startTime || '00:00').split(':').map(Number)
+  date.setHours(hours || 0, minutes || 0, 0, 0)
+  return date
+}
+
+function formatRelative(value) {
+  const date = asDate(value)
+  if (!date) return 'Recently'
+  const days = Math.floor((Date.now() - date.getTime()) / 86400000)
+  if (days <= 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days} days ago`
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+function formatEventDate(event) {
+  const date = eventStart(event)
+  if (!date) return 'Date to be announced'
+  return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · ${event.startTime || 'Time TBA'}`
+}
+
+const upcomingEvents = computed(() => scheduleItems.value
+  .filter((event) => eventStart(event) && eventStart(event) >= new Date())
+  .sort((a, b) => eventStart(a) - eventStart(b))
+  .slice(0, 3))
+const upcomingEventCount = computed(() => scheduleItems.value.filter((event) =>
+  eventStart(event) && eventStart(event) >= new Date(),
+).length)
+const announcements = computed(() => newsItems.value.slice(0, 4).map((item) => ({
+  ...item,
+  body: item.excerpt,
+  date: formatRelative(item.date),
+})))
+const recitalCount = computed(() => scheduleItems.value.filter((event) =>
+  ['Recital', 'Concert'].includes(event.type)
+  && eventStart(event)
+  && eventStart(event) >= new Date(),
+).length)
+const workshopRegistrations = computed(() => scheduleItems.value
+  .filter((event) => event.type === 'Workshop' && eventStart(event) && eventStart(event) >= new Date())
+  .reduce((total, event) => total + (Number(event.registrationCount) || 0), 0))
+const season = computed(() => new Date().toLocaleDateString(undefined, { month: 'long', year: 'numeric' }))
 </script>
 
 <template>
-  <div class="space-y-5 sm:space-y-8">
+  <div v-if="loading" class="min-h-[65vh] flex flex-col items-center justify-center text-center px-6">
+    <div class="relative flex h-24 w-24 items-center justify-center">
+      <div class="absolute inset-0 rounded-full border border-gold-500/15"></div>
+      <div class="absolute inset-1 rounded-full border border-transparent border-t-gold-400 animate-spin"></div>
+      <div class="absolute inset-3 rounded-full border border-transparent border-b-gold-500/50 animate-spin" style="animation-direction: reverse; animation-duration: 2.4s"></div>
+      <svg class="h-8 w-8 text-gold-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.4" d="M9 18V5l12-2v13M9 18c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3 3 1.34 3 3zm12-2c0 1.66-1.34 3-3 3s-3-1.34-3-3 1.34-3 3-3 3 1.34 3 3z" /></svg>
+    </div>
+    <p class="mt-7 text-[10px] uppercase tracking-[0.38em] text-gold-400/80">Resonanz Academy</p>
+    <h2 class="mt-2 font-serif text-2xl text-bone-100">Preparing your experience</h2>
+    <p class="mt-2 text-sm text-bone-500">Gathering the latest from the academy</p>
+    <p v-if="loadError" role="alert" class="mt-5 max-w-md text-sm text-rose-300">{{ loadError }}</p>
+  </div>
+  <div v-else class="space-y-5 sm:space-y-8">
+    <div v-if="loadError" role="alert" class="rounded-xl border border-rose-700/50 bg-rose-950/30 px-4 py-3 text-sm text-rose-200">
+      Some dashboard information could not be loaded: {{ loadError }}
+    </div>
     <!-- Hero banner -->
     <section
       v-reveal
@@ -50,7 +96,7 @@ const upcoming = [
         </div>
       </div>
       <div class="relative">
-        <p class="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-gold-400/80">Season · Spring 2026</p>
+        <p class="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-gold-400/80">Academy · {{ season }}</p>
         <h1 class="mt-2 sm:mt-3 text-2xl sm:text-4xl lg:text-5xl font-serif text-bone-100 leading-tight">
           Where artistry meets <span class="text-shimmer">discipline</span>
         </h1>
@@ -67,8 +113,8 @@ const upcoming = [
         <div class="absolute -right-6 -top-6 w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gold-500/10 blur-2xl group-hover:bg-gold-500/20 transition-colors duration-500"></div>
         <div class="relative flex items-start justify-between">
           <div>
-            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Active Students</p>
-            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ students }}</p>
+          <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Courses</p>
+            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ courseItems.length }}</p>
           </div>
           <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -77,7 +123,7 @@ const upcoming = [
           </div>
         </div>
         <p class="relative mt-1.5 sm:mt-3 text-[11px] sm:text-xs text-emerald-400/80 flex items-center gap-1">
-          <span>▲</span> 8% growth this term
+          <span class="text-gold-400">♪</span> Programs currently offered
         </p>
       </div>
 
@@ -86,8 +132,8 @@ const upcoming = [
         <div class="absolute -right-6 -top-6 w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-maroon-500/15 blur-2xl group-hover:bg-maroon-500/25 transition-colors duration-500"></div>
         <div class="relative flex items-start justify-between">
           <div>
-            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Upcoming Recitals</p>
-            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ recitals }}</p>
+            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Upcoming Events</p>
+            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ upcomingEventCount }}</p>
           </div>
           <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -96,7 +142,7 @@ const upcoming = [
           </div>
         </div>
         <p class="relative mt-1.5 sm:mt-3 text-[11px] sm:text-xs text-bone-400 flex items-center gap-1">
-          <span class="text-gold-400">●</span> Next recital in 5 days
+          <span class="text-gold-400">●</span> {{ recitalCount }} recitals or concerts
         </p>
       </div>
 
@@ -105,8 +151,8 @@ const upcoming = [
         <div class="absolute -right-6 -top-6 w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gold-500/10 blur-2xl group-hover:bg-gold-500/20 transition-colors duration-500"></div>
         <div class="relative flex items-start justify-between">
           <div>
-            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">New Enrollments</p>
-            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ enrollments }}</p>
+            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Workshop Registrations</p>
+            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ workshopRegistrations }}</p>
           </div>
           <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -115,7 +161,7 @@ const upcoming = [
           </div>
         </div>
         <p class="relative mt-1.5 sm:mt-3 text-[11px] sm:text-xs text-emerald-400/80 flex items-center gap-1">
-          <span>▲</span> 12% vs last month
+          <span class="text-gold-400">♪</span> Across upcoming workshops
         </p>
       </div>
 
@@ -125,7 +171,7 @@ const upcoming = [
         <div class="relative flex items-start justify-between">
           <div>
             <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">Faculty Members</p>
-            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ faculty }}</p>
+            <p class="mt-1 sm:mt-2 text-2xl sm:text-4xl font-serif text-gold-gradient">{{ teacherItems.length }}</p>
           </div>
           <div class="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400 group-hover:scale-110 group-hover:rotate-6 transition-transform duration-300">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -134,7 +180,7 @@ const upcoming = [
           </div>
         </div>
         <p class="relative mt-1.5 sm:mt-3 text-[11px] sm:text-xs text-bone-400 flex items-center gap-1">
-          <span class="text-gold-400">★</span> 3 new instructors
+          <span class="text-gold-400">★</span> Faculty in the directory
         </p>
       </div>
     </div>
@@ -145,12 +191,12 @@ const upcoming = [
       <div v-reveal class="lg:col-span-2 rounded-xl sm:rounded-2xl border border-maroon-700/60 glass-card p-4 sm:p-7 lg:p-8">
         <div class="flex items-center justify-between mb-4 sm:mb-5">
           <h3 class="text-lg sm:text-xl font-serif text-gold-gradient">Announcements</h3>
-          <span class="text-[10px] sm:text-xs text-bone-500 uppercase tracking-wider">{{ announcements.length }} new</span>
+          <span class="text-[10px] sm:text-xs text-bone-500 uppercase tracking-wider">{{ announcements.length }} latest</span>
         </div>
         <ul class="space-y-1.5 sm:space-y-2">
           <li
             v-for="(a, i) in announcements"
-            :key="i"
+            :key="a.id"
             v-reveal="i * 120"
             class="flex items-start gap-3 sm:gap-4 p-3 sm:p-4 rounded-xl hover:bg-maroon-800/50 transition-colors duration-300 group"
           >
@@ -163,6 +209,7 @@ const upcoming = [
               <p class="text-[10px] sm:text-xs text-gold-400/70 mt-1.5 sm:mt-2 uppercase tracking-wider">{{ a.date }}</p>
             </div>
           </li>
+          <li v-if="!announcements.length" class="rounded-xl border border-maroon-700/40 bg-maroon-850/40 p-4 text-sm text-bone-500">No announcements have been published yet.</li>
         </ul>
       </div>
 
@@ -171,8 +218,8 @@ const upcoming = [
         <h3 class="text-lg sm:text-xl font-serif text-gold-gradient mb-4 sm:mb-5">Upcoming</h3>
         <ul class="space-y-2.5 sm:space-y-3">
           <li
-            v-for="(u, i) in upcoming"
-            :key="i"
+            v-for="(u, i) in upcomingEvents"
+            :key="u.id"
             v-reveal="300 + i * 100"
             class="lift rounded-xl bg-maroon-850/60 border border-maroon-700/50 p-3 sm:p-4 cursor-pointer"
           >
@@ -180,9 +227,10 @@ const upcoming = [
               <p class="font-semibold text-bone-200 text-[13px] sm:text-sm">{{ u.title }}</p>
               <span class="w-2 h-2 rounded-full bg-gold-500 animate-glow flex-shrink-0"></span>
             </div>
-            <p class="text-[11px] sm:text-xs text-bone-500">{{ u.when }}</p>
-            <p class="text-[11px] sm:text-xs text-gold-400/70 mt-1">{{ u.place }}</p>
+              <p class="text-[11px] sm:text-xs text-bone-500">{{ formatEventDate(u) }}</p>
+              <p class="text-[11px] sm:text-xs text-gold-400/70 mt-1">{{ u.venue || 'Venue to be announced' }}</p>
           </li>
+          <li v-if="!upcomingEvents.length" class="rounded-xl border border-maroon-700/40 bg-maroon-850/40 p-4 text-sm text-bone-500">No upcoming events have been scheduled.</li>
         </ul>
       </div>
     </div>

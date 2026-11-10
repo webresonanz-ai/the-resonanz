@@ -100,6 +100,10 @@ function isWorkshop(event) {
   return event?.type === 'Workshop'
 }
 
+function isRegistrationOpen(event) {
+  return event?.registrationOpen !== false
+}
+
 function isConcert(event) {
   return event?.type === 'Concert'
 }
@@ -168,6 +172,10 @@ async function submitRegistration() {
 
   if (isFull(selectedEvent.value)) {
     registrationError.value = 'This workshop is full.'
+    return
+  }
+  if (!isRegistrationOpen(selectedEvent.value)) {
+    registrationError.value = 'Registration for this workshop is closed.'
     return
   }
 
@@ -244,11 +252,11 @@ async function submitRegistration() {
                 v-if="isWorkshop(event)"
                 type="button"
                 class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors"
-                :class="isFull(event)
+                :class="!isRegistrationOpen(event) || isFull(event)
                   ? 'bg-maroon-800/60 border border-maroon-700/60 text-bone-500'
                   : 'bg-gold-500 text-maroon-950 hover:bg-gold-400'"
                 @click="openEvent(event)"
-              >{{ isFull(event) ? 'Workshop full' : 'Register' }}</button>
+              >{{ !isRegistrationOpen(event) ? 'Registration closed' : isFull(event) ? 'Workshop full' : 'Register' }}</button>
               <a
                 v-else-if="hasTicket(event)"
                 :href="event.ticketURL"
@@ -373,6 +381,10 @@ async function submitRegistration() {
                 <span class="text-bone-200 font-medium">{{ registeredOf(selectedEvent) }} / {{ capacityOf(selectedEvent) }}</span>
               </div>
 
+              <div v-if="!isRegistrationOpen(selectedEvent)" role="status" class="mt-4 rounded-xl border border-maroon-700/60 bg-maroon-900/50 p-4 text-sm text-bone-300">
+                Registration for this workshop is closed.
+              </div>
+
               <div v-if="registrationMessage" role="status" class="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-4 text-sm text-emerald-200">
                 <p>{{ registrationMessage }}</p>
                 <div v-if="registrationTicket" class="mt-3 rounded-lg border border-emerald-700/30 bg-emerald-950/30 px-3 py-2">
@@ -381,11 +393,11 @@ async function submitRegistration() {
                 </div>
               </div>
 
-              <div v-else-if="isFull(selectedEvent)" role="alert" class="mt-4 rounded-xl border border-rose-700/50 bg-rose-950/30 p-4 text-sm text-rose-200">
+              <div v-else-if="isRegistrationOpen(selectedEvent) && isFull(selectedEvent)" role="alert" class="mt-4 rounded-xl border border-rose-700/50 bg-rose-950/30 p-4 text-sm text-rose-200">
                 This workshop has reached its maximum capacity.
               </div>
 
-              <form v-else class="mt-4 space-y-4" @submit.prevent="submitRegistration">
+              <form v-else-if="isRegistrationOpen(selectedEvent)" class="mt-4 space-y-4" @submit.prevent="submitRegistration">
                 <div>
                   <label for="workshop-name" class="block text-xs font-medium text-bone-400 mb-1.5">Name</label>
                   <input id="workshop-name" v-model="registration.name" type="text" maxlength="100" :class="[inputBase, registrationErrors.name ? 'border-rose-700/60' : '']" />
