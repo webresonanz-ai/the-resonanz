@@ -1,0 +1,363 @@
+@import "tailwindcss";
+
+/* ============================================================
+   RESONANZ — Luxury Theme Tokens
+   Palette: Red Maroon · Shining Gold · White Bone
+   ============================================================ */
+@theme {
+  /* ---- Red Maroon ---- */
+  --color-maroon-950: #0d0306;
+  --color-maroon-900: #1a0508;
+  --color-maroon-850: #240810;
+  --color-maroon-800: #2d0a0f;
+  --color-maroon-700: #4a0e1a;
+  --color-maroon-600: #6b1525;
+  --color-maroon-500: #8b1a2b;
+  --color-maroon-400: #a8253a;
+
+  /* ---- Shining Gold ---- */
+  --color-gold-700: #a07d18;
+  --color-gold-600: #b8941f;
+  --color-gold-500: #d4af37;
+  --color-gold-400: #e6c86e;
+  --color-gold-300: #f0d77b;
+  --color-gold-200: #fae9a5;
+
+  /* ---- White Bone ---- */
+  --color-bone-100: #faf6e9;
+  --color-bone-200: #f5f0e1;
+  --color-bone-300: #e8e0c9;
+  --color-bone-400: #d4cab0;
+  --color-bone-500: #b8ad8e;
+  --color-bone-600: #978a6b;
+
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Inter", sans-serif;
+
+  --shadow-luxury: 0 20px 60px -15px rgba(0, 0, 0, 0.7);
+  --shadow-gold: 0 8px 30px -8px rgba(212, 175, 55, 0.25);
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+body {
+  @apply bg-maroon-950 text-bone-300 font-sans antialiased;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: var(--color-gold-500);
+  color: var(--color-maroon-950);
+}
+
+/* Custom scrollbar — maroon & gold */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #1a0508;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #6b1525, #4a0e1a);
+  border-radius: 8px;
+  border: 2px solid #1a0508;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, #d4af37, #b8941f);
+}
+
+/* ============================================================
+   Keyframe Animations
+   ============================================================ */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(26px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-14px);
+  }
+}
+@keyframes glowPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 18px rgba(212, 175, 55, 0.18);
+  }
+  50% {
+    box-shadow: 0 0 38px rgba(212, 175, 55, 0.4);
+  }
+}
+@keyframes shimmer {
+  0% {
+    background-position: -200% center;
+  }
+  100% {
+    background-position: 200% center;
+  }
+}
+@keyframes shimmerLine {
+  0%,
+  100% {
+    transform: translateX(-120%);
+    opacity: 0;
+  }
+  50% {
+    transform: translateX(120%);
+    opacity: 1;
+  }
+}
+@keyframes gradientShift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+@keyframes spinSlow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pingGold {
+  75%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* ============================================================
+   Animation Utility Classes
+   ============================================================ */
+.animate-fade-in-up {
+  animation: fadeInUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-out both;
+}
+.animate-scale-in {
+  animation: scaleIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+.animate-glow {
+  animation: glowPulse 4s ease-in-out infinite;
+}
+.animate-spin-slow {
+  animation: spinSlow 26s linear infinite;
+}
+
+/* ============================================================
+   Luxury Text Effects
+   ============================================================ */
+
+/* Shining gold — animated shimmer */
+.text-shimmer {
+  background: linear-gradient(
+    100deg,
+    #b8941f 0%,
+    #d4af37 20%,
+    #fae9a5 38%,
+    #fff7d6 50%,
+    #fae9a5 62%,
+    #d4af37 80%,
+    #b8941f 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer 6s linear infinite;
+}
+
+/* Static gold gradient */
+.text-gold-gradient {
+  background: linear-gradient(135deg, #f0d77b 0%, #d4af37 45%, #b8941f 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Bone gradient */
+.text-bone-gradient {
+  background: linear-gradient(135deg, #faf6e9 0%, #d4cab0 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* ============================================================
+   Glassmorphism
+   ============================================================ */
+.glass {
+  background: rgba(26, 5, 8, 0.55);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+
+.glass-card {
+  background: linear-gradient(
+    145deg,
+    rgba(45, 10, 15, 0.6) 0%,
+    rgba(26, 5, 8, 0.7) 100%
+  );
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ============================================================
+   Hover Effects
+   ============================================================ */
+.gold-hover {
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.4s ease, border-color 0.4s ease;
+}
+.gold-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(212, 175, 55, 0.55);
+  box-shadow: 0 14px 40px -12px rgba(212, 175, 55, 0.28),
+    inset 0 1px 0 rgba(240, 215, 123, 0.12);
+}
+
+/* Lift card on hover */
+.lift {
+  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.35s ease, border-color 0.35s ease;
+}
+.lift:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 18px 50px -16px rgba(0, 0, 0, 0.8);
+  border-color: rgba(212, 175, 55, 0.4);
+}
+
+/* ============================================================
+   Scroll Reveal (used by v-reveal directive)
+   ============================================================ */
+.reveal {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.75s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* ============================================================
+   Page Transition (RouterView)
+   ============================================================ */
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-16px);
+}
+
+/* Generic fade transition */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* ============================================================
+   Decorative
+   ============================================================ */
+.animated-gradient {
+  background: linear-gradient(-45deg, #1a0508, #2d0a0f, #4a0e1a, #240810);
+  background-size: 400% 400%;
+  animation: gradientShift 18s ease infinite;
+}
+
+/* Conic gold ring for decorative orbs */
+.gold-ring {
+  background: conic-gradient(
+    from 0deg,
+    transparent,
+    rgba(212, 175, 55, 0.5),
+    transparent 55%
+  );
+}
+
+/* Shimmer line sweep (used in logo header) */
+.shimmer-line {
+  animation: shimmerLine 5s ease-in-out infinite;
+}
+
+/* Gold ping dot */
+.ping-gold::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: var(--color-gold-500);
+  animation: pingGold 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* Reduced motion — respect user preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  .reveal {
+    opacity: 1;
+    transform: none;
+  }
+}
