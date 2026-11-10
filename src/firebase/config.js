@@ -6,6 +6,7 @@
 // ============================================================
 import { initializeApp } from 'firebase/app'
 import { getAuth, GoogleAuthProvider } from 'firebase/auth'
+import { getFirestore } from 'firebase/firestore'
 import { getAnalytics, isSupported as analyticsSupported } from 'firebase/analytics'
 
 const firebaseConfig = {
@@ -31,12 +32,14 @@ export const isFirebaseConfigured = Boolean(
 
 let app = null
 let auth = null
+let db = null
 let googleProvider = null
 let analytics = null
 
 if (isFirebaseConfigured) {
   app = initializeApp(firebaseConfig)
   auth = getAuth(app)
+  db = getFirestore(app)
   googleProvider = new GoogleAuthProvider()
   // Ask Google to show the account chooser each time
   googleProvider.setCustomParameters({ prompt: 'select_account' })
@@ -49,4 +52,4 @@ if (isFirebaseConfigured) {
     .catch(() => {})
 }
 
-export { app, auth, googleProvider, analytics }
+export { app, auth, db, googleProvider, analytics }

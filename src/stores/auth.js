@@ -9,6 +9,7 @@ import {
   onAuthStateChanged,
 } from 'firebase/auth'
 import { auth, googleProvider, isFirebaseConfigured } from '@/firebase/config'
+import { ensureUserProfile } from '@/firebase/users'
 
 /* ---- helpers ---- */
 function mapUser(u) {
@@ -106,7 +107,8 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      await signInWithEmailAndPassword(auth, email, password)
+      const cred = await signInWithEmailAndPassword(auth, email, password)
+      await ensureUserProfile(cred.user)
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -127,6 +129,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password)
       if (name) await updateProfile(cred.user, { displayName: name })
+      await ensureUserProfile(cred.user)
       user.value = mapUser(cred.user)
       return true
     } catch (err) {
@@ -146,7 +149,8 @@ export const useAuthStore = defineStore('auth', () => {
     loading.value = true
     error.value = null
     try {
-      await signInWithPopup(auth, googleProvider)
+      const cred = await signInWithPopup(auth, googleProvider)
+      await ensureUserProfile(cred.user)
       return true
     } catch (err) {
       error.value = friendlyError(err)
