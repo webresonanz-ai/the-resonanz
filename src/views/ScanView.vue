@@ -29,6 +29,17 @@ const overlayRef = ref(null)
 let lastScannedTicket = ''
 let cooldownTimer = null
 
+/* ---- network guard: never leave the UI stuck on "Checking in…" ---- */
+const CHECKIN_TIMEOUT_MS = 15000
+
+function withTimeout(promise, ms, message) {
+  let timer
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
 function resetCooldown() {
   lastScannedTicket = ''
   if (cooldownTimer) clearTimeout(cooldownTimer)
@@ -198,11 +209,15 @@ async function handleScanResult(rawValue) {
   checkingIn.value = true
 
   try {
-    const result = await checkInByTicketId(rawValue, {
-      uid: authStore.user.uid,
-      displayName: authStore.user.displayName,
-      email: authStore.user.email,
-    })
+    const result = await withTimeout(
+      checkInByTicketId(rawValue, {
+        uid: authStore.user.uid,
+        displayName: authStore.user.displayName,
+        email: authStore.user.email,
+      }),
+      CHECKIN_TIMEOUT_MS,
+      'Check-in is taking too long. Check your connection and scan the ticket again.',
+    )
     lastResult.value = result
   } catch (err) {
     scanError.value = err?.message || 'Unable to check in this guest. Please try again.'

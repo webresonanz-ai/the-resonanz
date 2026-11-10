@@ -392,6 +392,27 @@ service cloud.firestore {
       allow read: if isAdmin() || isScanner();
     }
 
+    // Fast QR check-in lookup: ticketId -> { eventId, registrationId }.
+    // Written atomically with the workshop registration, or lazily
+    // backfilled by a scanner on the first scan of a legacy ticket.
+    match /ticketLookup/{ticketId} {
+      allow read: if isAdmin() || isScanner();
+      allow create: if hasRequiredFields(request.resource.data, [
+          'eventId', 'registrationId', 'ticketId', 'createdAt'
+        ])
+        && hasOnlyAllowedFields(request.resource.data, [
+          'eventId', 'registrationId', 'ticketId', 'createdAt'
+        ])
+        && request.resource.data.ticketId == ticketId
+        && request.resource.data.eventId is string
+        && request.resource.data.registrationId is string
+        && request.resource.data.createdAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/schedules/$(request.resource.data.eventId)/registrations/$(request.resource.data.registrationId)
+        ).data.ticketId == ticketId;
+      allow update, delete: if isAdmin();
+    }
+
     match /registrationEmails/{lookupId} {
       allow read: if true;
       allow create: if hasRequiredFields(request.resource.data, [

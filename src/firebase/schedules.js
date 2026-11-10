@@ -128,6 +128,7 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
     registrationId = formatRegistrationId(registrationNumber)
     const registrationRef = doc(database, 'schedules', eventId, 'registrations', registrationId)
     ticketId = generateTicketId(event.eventId || eventId, registrationId)
+    const ticketLookupRef = doc(database, 'ticketLookup', ticketId)
 
     transaction.set(registrationRef, {
       name: name.trim(),
@@ -144,6 +145,13 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
     transaction.set(lookupRef, {
       eventId,
       registrationId,
+      createdAt: serverTimestamp(),
+    })
+    // Direct ticket -> registration mapping for fast, index-free QR check-in.
+    transaction.set(ticketLookupRef, {
+      eventId,
+      registrationId,
+      ticketId,
       createdAt: serverTimestamp(),
     })
     if (counterSnap.exists()) {

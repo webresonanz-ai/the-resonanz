@@ -5,21 +5,36 @@
 // and each carries a unique ticketId — that ticketId is the content encoded
 // in the QR code printed on the audience's ticket.
 //
-// checkInByTicketId() looks up the matching registration with a collection
-// group query, then atomically marks it as checked-in inside a transaction.
-// The transaction re-reads the doc so that the same QR code can only be
+// Fast path: every registration also writes a tiny ticketLookup/{ticketId}
+// document ({ eventId, registrationId }) in the same transaction. A scan is
+// therefore a direct document read + a single registration transaction — no
+// collection-group query, no index dependency, ~2 round trips.
+//
+// Legacy path: registrations created before ticketLookup existed fall back to
+// the indexed collection-group query once, then the lookup document is
+// backfilled so the next scan of that ticket is fast.
+//
+// The transaction re-reads the registration so the same QR code can only be
 // checked in once — a second scan reports "already checked in" instead of
-// overwriting the original check-in record.
+// overwriting the original check-in record. This stays safe with multiple
+// scanners checking guests in concurrently.
 // ============================================================
 import {
   collectionGroup,
-  getDocs,
+  doc,
   query,
   runTransaction,
   serverTimestamp,
   where,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './config'
+
+const TICKET_LOOKUP = 'ticketLookup'
+
+// Session cache: ticketId -> { eventId, registrationId }. Repeated scans of
+// the same QR skip the lookup read entirely (the transaction still re-reads
+// the registration itself for consistency).
+const ticketCache = new Map()
 
 function getDatabase() {
   if (!isFirebaseConfigured || !db) {
@@ -30,12 +45,16 @@ function getDatabase() {
   return db
 }
 
+/** schedules/{eventId}/registrations/{registrationId} -> { eventId, registrationId } */
+function parseRegistrationPath(path) {
+  const parts = String(path || '').split('/')
+  const index = parts.indexOf('registrations')
+  if (index < 2 || index + 1 >= parts.length) return null
+  return { eventId: parts[index - 1], registrationId: parts[index + 1] }
+}
+
 /**
  * Look up a workshop registration by its QR ticket ID and check the guest in.
- *
- * The write happens inside a Firestore transaction so that concurrent scans of
- * the same QR code race safely: the first scan flips `checkedIn` to true and
- * the second one observes the already-checked-in state without overwriting it.
  *
  * @param {string} ticketId  The content decoded from the QR code (the registration ticketId).
  * @param {{ uid: string, displayName?: string, email?: string }} scanner  The signed-in scanner or admin.
@@ -52,33 +71,85 @@ export async function checkInByTicketId(ticketId, scanner) {
     throw new Error('You must be signed in to check in guests.')
   }
 
-  // Search every workshop registration subcollection for this ticketId.
-  const ticketQuery = query(
-    collectionGroup(database, 'registrations'),
-    where('ticketId', '==', normalizedTicketId),
-  )
-  const snapshot = await getDocs(ticketQuery)
+  const scannerName = scanner.displayName || scanner.email || ''
+  const lookupRef = doc(database, TICKET_LOOKUP, normalizedTicketId)
+  const cached = ticketCache.get(normalizedTicketId)
 
-  if (snapshot.empty) {
-    return { status: 'not_found', registration: null }
-  }
-
-  // Ticket IDs are unique by design; if more than one ever matches, log it
-  // and operate on the first so the scanner still gets a usable result.
-  if (snapshot.size > 1) {
-    console.warn(
-      `Multiple registrations found for ticketId "${normalizedTicketId}" — using the first match.`
-    )
-  }
-
-  const registrationRef = snapshot.docs[0].ref
-
-  let result
+  let result = { status: 'not_found', registration: null }
 
   await runTransaction(database, async (transaction) => {
+    let eventId = cached?.eventId || ''
+    let registrationId = cached?.registrationId || ''
+    let needsLookupWrite = false
+
+    // ---- 1. Fast path: direct ticket lookup document -------------------
+    if (!eventId || !registrationId) {
+      const lookupSnap = await transaction.get(lookupRef)
+      if (lookupSnap.exists()) {
+        const lookup = lookupSnap.data()
+        eventId = lookup.eventId || ''
+        registrationId = lookup.registrationId || ''
+      }
+    }
+
+    let registrationRef =
+      eventId && registrationId
+        ? doc(database, 'schedules', eventId, 'registrations', registrationId)
+        : null
+
+    // ---- 2. Legacy path: indexed collection-group query, once ----------
+    if (!registrationRef) {
+      const snapshot = await transaction.get(
+        query(
+          collectionGroup(database, 'registrations'),
+          where('ticketId', '==', normalizedTicketId)
+        )
+      )
+
+      if (snapshot.empty) {
+        result = { status: 'not_found', registration: null }
+        return
+      }
+
+      if (snapshot.size > 1) {
+        console.warn(
+          `Multiple registrations found for ticketId "${normalizedTicketId}" — using the first match.`
+        )
+      }
+
+      const match = snapshot.docs[0]
+      const parsed = parseRegistrationPath(match.ref.path)
+      if (!parsed) {
+        result = { status: 'not_found', registration: null }
+        return
+      }
+
+      registrationRef = match.ref
+      eventId = parsed.eventId
+      registrationId = parsed.registrationId
+      needsLookupWrite = true
+    }
+
+    // ---- 3. Read the registration fresh inside the transaction ---------
     const freshSnap = await transaction.get(registrationRef)
     if (!freshSnap.exists()) {
-      throw new Error('This registration no longer exists.')
+      ticketCache.delete(normalizedTicketId)
+      result = { status: 'not_found', registration: null }
+      return
+    }
+
+    // Backfill the lookup document for legacy registrations so the next
+    // scan of this ticket takes the fast path.
+    if (needsLookupWrite) {
+      transaction.set(lookupRef, {
+        eventId,
+        registrationId,
+        ticketId: normalizedTicketId,
+        createdAt: serverTimestamp(),
+      })
+      ticketCache.set(normalizedTicketId, { eventId, registrationId })
+    } else if (!cached) {
+      ticketCache.set(normalizedTicketId, { eventId, registrationId })
     }
 
     const data = freshSnap.data()
@@ -89,8 +160,6 @@ export async function checkInByTicketId(ticketId, scanner) {
       result = { status: 'already_checked_in', registration }
       return
     }
-
-    const scannerName = scanner.displayName || scanner.email || ''
 
     transaction.update(registrationRef, {
       checkedIn: true,
