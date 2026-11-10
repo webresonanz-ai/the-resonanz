@@ -20,6 +20,7 @@ const eventModalOpen = ref(false)
 const submitting = ref(false)
 const registrationMessage = ref('')
 const registrationError = ref('')
+const registrationTicket = ref('')
 const registration = reactive({ name: '', vocalRange: '', email: '' })
 const registrationErrors = reactive({ name: '', vocalRange: '', email: '' })
 
@@ -133,12 +134,14 @@ function openEvent(event) {
   registrationErrors.email = ''
   registrationMessage.value = ''
   registrationError.value = ''
+  registrationTicket.value = ''
   eventModalOpen.value = true
 }
 
 function closeEventModal() {
   eventModalOpen.value = false
   selectedEventId.value = ''
+  registrationTicket.value = ''
 }
 
 function validateRegistration() {
@@ -160,6 +163,7 @@ async function submitRegistration() {
   if (!selectedEvent.value) return
   registrationError.value = ''
   registrationMessage.value = ''
+  registrationTicket.value = ''
   if (!validateRegistration()) return
 
   if (isFull(selectedEvent.value)) {
@@ -169,11 +173,12 @@ async function submitRegistration() {
 
   submitting.value = true
   try {
-    await registerForWorkshop(selectedEvent.value.id, {
+    const ticketId = await registerForWorkshop(selectedEvent.value.id, {
       name: registration.name,
       email: registration.email,
       vocalRange: registration.vocalRange,
     })
+    registrationTicket.value = ticketId
     registrationMessage.value = 'You are registered! We look forward to seeing you.'
     registration.name = ''
     registration.vocalRange = ''
@@ -369,7 +374,11 @@ async function submitRegistration() {
               </div>
 
               <div v-if="registrationMessage" role="status" class="mt-4 rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-4 text-sm text-emerald-200">
-                {{ registrationMessage }}
+                <p>{{ registrationMessage }}</p>
+                <div v-if="registrationTicket" class="mt-3 rounded-lg border border-emerald-700/30 bg-emerald-950/30 px-3 py-2">
+                  <p class="text-[10px] uppercase tracking-wider text-emerald-300/80 mb-1">Ticket ID</p>
+                  <p class="font-mono text-sm sm:text-base break-all text-emerald-100">{{ registrationTicket }}</p>
+                </div>
               </div>
 
               <div v-else-if="isFull(selectedEvent)" role="alert" class="mt-4 rounded-xl border border-rose-700/50 bg-rose-950/30 p-4 text-sm text-rose-200">

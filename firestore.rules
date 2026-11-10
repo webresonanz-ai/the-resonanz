@@ -16,8 +16,11 @@ service cloud.firestore {
     // Each content document includes createdAt and updatedAt timestamps.
     // Courses: name, duration, level, fee.
     // Schedules: title, type, date, startTime, endTime, venue, ticketURL,
-    // bannerURL, capacity, registrationCount. Workshop registrations are stored
+    // bannerURL, capacity, registrationCount, eventId (workshops only).
+    // Workshop registrations are stored
     // at schedules/{eventId}/registrations/{email} and increment registrationCount.
+    // Registration fields: name, email, vocalRange, ticketId, eventId,
+    // eventTitle, createdAt.
     // Teachers: name, specialty, bio, photoURL, email, profileURL.
     // News: category, title, excerpt, date, readTime, featured.
     // Site content is intentionally public-readable; only admins can write.
@@ -127,7 +130,7 @@ service cloud.firestore {
         ])
         && hasOnlyAllowedFields(data, [
           'title', 'type', 'date', 'startTime', 'endTime', 'venue',
-          'ticketURL', 'bannerURL', 'capacity', 'registrationCount',
+          'ticketURL', 'bannerURL', 'capacity', 'registrationCount', 'eventId',
           'createdAt', 'updatedAt'
         ])
         && isBoundedString(data, 'title', 1, 120)
@@ -141,6 +144,7 @@ service cloud.firestore {
         && isBoundedString(data, 'venue', 1, 100)
         && isValidUrl(data.ticketURL)
         && isValidUrl(data.bannerURL)
+        && (!('eventId' in data) || isOptionalString(data, 'eventId', 100))
         && data.capacity is int
         && data.capacity >= 0
         && data.capacity <= 100000
@@ -172,10 +176,10 @@ service cloud.firestore {
         && after.get('registrationCount', 0) == before.get('registrationCount', 0) + 1
         && after.get('registrationCount', 0) <= before.get('capacity', 0)
         && hasRequiredFields(data, [
-          'name', 'email', 'vocalRange', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && hasOnlyAllowedFields(data, [
-          'name', 'email', 'vocalRange', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && data.eventId == eventId
         && data.email is string
@@ -184,6 +188,10 @@ service cloud.firestore {
         && data.email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
         && isBoundedString(data, 'name', 1, 100)
         && isBoundedString(data, 'vocalRange', 1, 50)
+        && data.ticketId is string
+        && data.ticketId.size() >= 1
+        && data.ticketId.size() <= 150
+        && data.ticketId.matches('^[A-Z0-9_-]+$')
         && isOptionalString(data, 'eventTitle', 120)
         && data.createdAt == request.time;
     }
