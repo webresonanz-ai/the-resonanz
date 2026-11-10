@@ -95,8 +95,11 @@ const navigation = [
     icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
   },
 ]
+const navigationOrder = ['Dashboard', 'Courses & Fee', 'Schedules', 'Teachers', 'News', 'Contact', 'Admin']
 const visibleNavigation = computed(() =>
-  navigation.filter((item) => !item.adminOnly || authStore.isAdmin)
+  navigation
+    .filter((item) => navigationOrder.includes(item.name) && (!item.adminOnly || authStore.isAdmin))
+    .sort((a, b) => navigationOrder.indexOf(a.name) - navigationOrder.indexOf(b.name))
 )
 </script>
 
@@ -139,20 +142,20 @@ const visibleNavigation = computed(() =>
       ]"
     >
       <!-- Logo -->
-      <div class="h-20 flex items-center justify-center border-b border-maroon-700/50 relative overflow-hidden flex-shrink-0">
+      <div class="h-16 lg:h-20 flex items-center justify-center border-b border-maroon-700/50 relative overflow-hidden flex-shrink-0">
         <div class="absolute inset-x-0 h-px top-1/2 bg-gradient-to-r from-transparent via-gold-500/40 to-transparent shimmer-line"></div>
         <Transition name="fade" mode="out-in">
           <h1
             v-if="showText"
             key="full"
-            class="text-2xl font-serif text-shimmer tracking-[0.22em] font-bold select-none"
+            class="text-xl lg:text-2xl font-serif text-shimmer tracking-[0.22em] font-bold select-none"
           >
             RESONANZ
           </h1>
           <span
             v-else
             key="icon"
-            class="text-3xl font-serif text-gold-gradient font-bold select-none"
+            class="text-2xl lg:text-3xl font-serif text-gold-gradient font-bold select-none"
           >
             R
           </span>
@@ -160,18 +163,18 @@ const visibleNavigation = computed(() =>
       </div>
 
       <!-- Nav -->
-      <nav class="flex-1 py-6 space-y-1.5 px-3 overflow-y-auto overflow-x-hidden">
+      <nav class="flex-1 py-4 lg:py-6 space-y-1 px-2.5 lg:px-3 overflow-y-auto overflow-x-hidden">
         <RouterLink
           v-for="(item, index) in visibleNavigation"
           :key="item.name"
           :to="item.path"
           @click="closeMobile"
-          class="nav-item group relative flex items-center px-3 py-3 rounded-xl text-bone-400 hover:text-gold-300 transition-all duration-300 animate-fade-in-up"
+          class="nav-item group relative flex items-center px-3 py-2.5 rounded-xl text-bone-400 hover:text-gold-300 transition-all duration-300 animate-fade-in-up"
           exact-active-class="nav-active"
           :style="{ animationDelay: `${index * 70}ms` }"
         >
           <svg
-            class="w-5 h-5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+            class="w-[1.1rem] h-[1.1rem] lg:w-5 lg:h-5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -180,7 +183,7 @@ const visibleNavigation = computed(() =>
           </svg>
           <span
             v-if="showText"
-            class="ml-4 font-medium tracking-wide text-sm whitespace-nowrap"
+            class="ml-3.5 font-medium tracking-wide text-[0.82rem] lg:text-sm whitespace-nowrap"
           >
             {{ item.name }}
           </span>
@@ -188,8 +191,8 @@ const visibleNavigation = computed(() =>
       </nav>
 
       <!-- User card + login/logout -->
-      <div v-if="showText" class="px-4 py-3 border-t border-maroon-700/50 flex-shrink-0">
-        <div class="rounded-xl bg-gradient-to-br from-gold-500/10 to-transparent border border-gold-500/20 p-3">
+      <div v-if="showText" class="px-3 py-2.5 border-t border-maroon-700/50 flex-shrink-0">
+        <div class="rounded-xl bg-gradient-to-br from-gold-500/10 to-transparent border border-gold-500/20 p-2.5">
           <template v-if="authStore.isAuthenticated">
             <div class="flex items-center gap-2 min-w-0">
               <div class="w-8 h-8 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 text-xs font-bold flex-shrink-0">
@@ -220,7 +223,7 @@ const visibleNavigation = computed(() =>
       <!-- Toggle -->
       <button
         @click="toggleSidebar"
-        class="p-4 border-t border-maroon-700/50 text-bone-500 hover:text-gold-400 transition-colors group flex items-center justify-center flex-shrink-0"
+        class="p-3 lg:p-4 border-t border-maroon-700/50 text-bone-500 hover:text-gold-400 transition-colors group flex items-center justify-center flex-shrink-0"
         :aria-label="isDesktop ? 'Toggle sidebar width' : 'Toggle menu'"
       >
         <svg
@@ -244,30 +247,30 @@ const visibleNavigation = computed(() =>
     <main class="flex-1 flex flex-col overflow-hidden relative z-10 min-w-0">
       <!-- Header -->
       <header
-        class="h-20 glass border-b border-maroon-700/50 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-20 sticky top-0 flex-shrink-0"
+        class="h-16 lg:h-20 glass border-b border-maroon-700/50 flex items-center justify-between px-3 sm:px-5 lg:px-8 z-20 sticky top-0 flex-shrink-0"
       >
-        <div class="flex items-center gap-3 sm:gap-4 min-w-0">
+        <div class="flex items-center gap-2.5 sm:gap-4 min-w-0">
           <button
             @click="toggleSidebar"
-            class="lg:hidden p-2 text-bone-400 hover:text-gold-400 transition-colors"
+            class="-ml-1 lg:hidden p-2 text-bone-400 hover:text-gold-400 transition-colors"
             aria-label="Open menu"
           >
-            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </button>
           <div class="min-w-0">
             <p class="text-[10px] sm:text-xs uppercase tracking-[0.25em] text-bone-500 hidden sm:block">Music Academy</p>
-            <h2 class="text-base sm:text-xl font-light text-bone-200 truncate">
+            <h2 class="text-sm sm:text-lg lg:text-xl font-light text-bone-200 truncate">
               <template v-if="authStore.isAuthenticated">Welcome back, <span class="text-gold-gradient font-semibold">{{ authStore.displayName }}</span></template>
               <template v-else>Welcome to <span class="text-gold-gradient font-semibold">Resonanz</span></template>
             </h2>
           </div>
         </div>
 
-        <div class="flex items-center gap-3 sm:gap-5 flex-shrink-0">
+        <div class="flex items-center gap-2 sm:gap-4 lg:gap-5 flex-shrink-0">
           <!-- Search (decorative, md+) -->
-          <div class="hidden md:flex items-center gap-2 px-3.5 py-2 rounded-xl bg-maroon-850/70 border border-maroon-700/50 text-bone-500 w-56">
+          <div class="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-maroon-850/70 border border-maroon-700/50 text-bone-500 w-44 lg:w-56">
             <svg class="w-4 h-4 text-bone-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
@@ -291,7 +294,7 @@ const visibleNavigation = computed(() =>
 
             <!-- Avatar -->
             <div
-              class="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 font-bold ring-2 ring-gold-500/30 hover:ring-gold-400/60 transition-all cursor-pointer select-none flex-shrink-0"
+              class="w-9 h-9 lg:w-10 lg:h-10 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 text-sm lg:text-base font-bold ring-2 ring-gold-500/30 hover:ring-gold-400/60 transition-all cursor-pointer select-none flex-shrink-0"
             >
               {{ authStore.initials }}
             </div>
@@ -300,7 +303,7 @@ const visibleNavigation = computed(() =>
           <RouterLink
             v-else
             to="/login"
-            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 font-semibold text-sm hover:shadow-lg hover:shadow-gold-500/30 hover:-translate-y-0.5 transition-all flex items-center gap-2 flex-shrink-0"
+            class="px-4 py-2 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 font-semibold text-sm hover:shadow-lg hover:shadow-gold-500/30 hover:-translate-y-0.5 transition-all flex items-center gap-2 flex-shrink-0"
           >
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>
             Login
@@ -309,7 +312,7 @@ const visibleNavigation = computed(() =>
       </header>
 
       <!-- Route content -->
-      <div class="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 relative">
+      <div class="flex-1 overflow-y-auto p-3 sm:p-5 lg:p-8 relative">
         <RouterView v-slot="{ Component }">
           <Transition name="page" mode="out-in">
             <component :is="Component" />

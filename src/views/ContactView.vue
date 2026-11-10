@@ -36,63 +36,63 @@ const channels = [
 ]
 
 const inputBase =
-  'w-full bg-maroon-850/70 border border-maroon-700/60 rounded-xl px-4 py-3 text-bone-200 placeholder:text-bone-500 outline-none transition-all focus:border-gold-500/50 focus:ring-2 focus:ring-gold-500/20'
+  'w-full bg-maroon-850/70 border border-maroon-700/60 rounded-xl px-3.5 py-2.5 text-sm text-bone-200 placeholder:text-bone-500 outline-none transition-all focus:border-gold-500/50 focus:ring-2 focus:ring-gold-500/20'
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div class="space-y-5 sm:space-y-8">
     <!-- Header -->
     <div v-reveal>
-      <p class="text-xs uppercase tracking-[0.3em] text-gold-400/80 mb-2">Get in touch</p>
-      <h1 class="text-3xl sm:text-4xl font-serif text-bone-100">Contact <span class="text-gold-gradient">Resonanz</span></h1>
-      <p class="mt-2 text-bone-500 max-w-xl">Questions about enrolment, lessons or events? We would love to hear from you.</p>
+      <p class="text-[10px] sm:text-xs uppercase tracking-[0.3em] text-gold-400/80 mb-1.5 sm:mb-2">Get in touch</p>
+      <h1 class="text-2xl sm:text-4xl font-serif text-bone-100">Contact <span class="text-gold-gradient">Resonanz</span></h1>
+      <p class="mt-2 text-[13px] sm:text-base text-bone-500 max-w-xl">Questions about enrolment, lessons or events? We would love to hear from you.</p>
     </div>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
       <!-- Channels -->
-      <div class="space-y-4 lg:col-span-1">
+      <div class="space-y-3 lg:col-span-1">
         <div
           v-for="(c, i) in channels"
           :key="i"
           v-reveal="i * 90"
-          class="lift flex items-start gap-4 rounded-2xl border border-maroon-700/60 glass-card p-5"
+          class="lift flex items-start gap-3 sm:gap-4 rounded-xl sm:rounded-2xl border border-maroon-700/60 glass-card p-3.5 sm:p-5"
         >
-          <span class="flex-shrink-0 w-11 h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400">
+          <span class="flex-shrink-0 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-maroon-700/50 border border-gold-500/20 flex items-center justify-center text-gold-400">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" :d="c.icon" /></svg>
           </span>
           <div>
-            <p class="text-xs uppercase tracking-wider text-bone-500">{{ c.label }}</p>
-            <p class="text-bone-200 mt-1 text-sm whitespace-pre-line leading-relaxed">{{ c.value }}</p>
+            <p class="text-[10px] sm:text-xs uppercase tracking-wider text-bone-500">{{ c.label }}</p>
+            <p class="text-bone-200 mt-1 text-[13px] sm:text-sm whitespace-pre-line leading-relaxed">{{ c.value }}</p>
           </div>
         </div>
       </div>
 
       <!-- Form -->
-      <div v-reveal="200" class="lg:col-span-2 rounded-2xl border border-maroon-700/60 glass-card p-6 sm:p-8 relative overflow-hidden">
+      <div v-reveal="200" class="lg:col-span-2 rounded-2xl border border-maroon-700/60 glass-card p-4 sm:p-7 lg:p-8 relative overflow-hidden">
         <div class="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-gold-500/8 blur-3xl"></div>
-        <form @submit.prevent="submit" class="relative space-y-5">
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+        <form @submit.prevent="submit" class="relative space-y-4 sm:space-y-5">
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5 sm:gap-5">
             <div>
-              <label class="block text-xs uppercase tracking-wider text-bone-500 mb-2">Name</label>
+              <label class="block text-xs uppercase tracking-wider text-bone-500 mb-1.5">Name</label>
               <input v-model="form.name" type="text" required placeholder="Your name" :class="inputBase" />
             </div>
             <div>
-              <label class="block text-xs uppercase tracking-wider text-bone-500 mb-2">Email</label>
+              <label class="block text-xs uppercase tracking-wider text-bone-500 mb-1.5">Email</label>
               <input v-model="form.email" type="email" required placeholder="you@email.com" :class="inputBase" />
             </div>
           </div>
           <div>
-            <label class="block text-xs uppercase tracking-wider text-bone-500 mb-2">Subject</label>
+            <label class="block text-xs uppercase tracking-wider text-bone-500 mb-1.5">Subject</label>
             <input v-model="form.subject" type="text" required placeholder="What is this about?" :class="inputBase" />
           </div>
           <div>
-            <label class="block text-xs uppercase tracking-wider text-bone-500 mb-2">Message</label>
+            <label class="block text-xs uppercase tracking-wider text-bone-500 mb-1.5">Message</label>
             <textarea v-model="form.message" required rows="5" placeholder="Tell us more…" :class="inputBase + ' resize-none'"></textarea>
           </div>
           <div class="flex items-center justify-between flex-wrap gap-3">
             <button
               type="submit"
-              class="px-7 py-3 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 font-semibold text-sm hover:shadow-lg hover:shadow-gold-500/30 hover:-translate-y-0.5 transition-all"
+              class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 font-semibold text-sm hover:shadow-lg hover:shadow-gold-500/30 hover:-translate-y-0.5 transition-all"
             >
               Send Message
             </button>

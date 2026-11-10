@@ -15,7 +15,9 @@ service cloud.firestore {
     // Collections: courses/{id}, schedules/{id}, teachers/{id}, news/{id}
     // Each content document includes createdAt and updatedAt timestamps.
     // Courses: name, duration, level, fee.
-    // Schedules: title, type, date, startTime, endTime, venue.
+    // Schedules: title, type, date, startTime, endTime, venue, ticketURL,
+    // bannerURL, capacity, registrationCount. Workshop registrations are stored
+    // at schedules/{eventId}/registrations/{email} and increment registrationCount.
     // Teachers: name, specialty, bio, photoURL, email, profileURL.
     // News: category, title, excerpt, date, readTime, featured.
     // Site content is intentionally public-readable; only admins can write.
@@ -120,10 +122,12 @@ service cloud.firestore {
     function isValidSchedule(data) {
       return hasRequiredFields(data, [
           'title', 'type', 'date', 'startTime', 'endTime', 'venue',
+          'ticketURL', 'bannerURL', 'capacity', 'registrationCount',
           'createdAt', 'updatedAt'
         ])
         && hasOnlyAllowedFields(data, [
           'title', 'type', 'date', 'startTime', 'endTime', 'venue',
+          'ticketURL', 'bannerURL', 'capacity', 'registrationCount',
           'createdAt', 'updatedAt'
         ])
         && isBoundedString(data, 'title', 1, 120)
@@ -135,7 +139,53 @@ service cloud.firestore {
         && data.endTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
         && data.endTime > data.startTime
         && isBoundedString(data, 'venue', 1, 100)
+        && isValidUrl(data.ticketURL)
+        && isValidUrl(data.bannerURL)
+        && data.capacity is int
+        && data.capacity >= 0
+        && data.capacity <= 100000
+        && data.registrationCount is int
+        && data.registrationCount >= 0
+        && data.registrationCount <= data.capacity
+        && (data.type != 'Concert' || data.ticketURL.size() > 0)
+        && (data.type != 'Workshop' || data.capacity >= 1)
         && validContentTimestamps(data);
+    }
+
+    function isRegistrationIncrement() {
+      return resource.data.type == 'Workshop'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'registrationCount'
+        ])
+        && request.resource.data.registrationCount == resource.data.get('registrationCount', 0) + 1
+        && request.resource.data.registrationCount <= resource.data.get('capacity', 0);
+    }
+
+    function isValidWorkshopRegistration(eventId, registrationId) {
+      let before = get(/databases/$(database)/documents/schedules/$(eventId)).data;
+      let after = getAfter(/databases/$(database)/documents/schedules/$(eventId)).data;
+      let data = request.resource.data;
+
+      return before.type == 'Workshop'
+        && after.type == 'Workshop'
+        && before.get('capacity', 0) >= 1
+        && after.get('registrationCount', 0) == before.get('registrationCount', 0) + 1
+        && after.get('registrationCount', 0) <= before.get('capacity', 0)
+        && hasRequiredFields(data, [
+          'name', 'email', 'vocalRange', 'eventId', 'eventTitle', 'createdAt'
+        ])
+        && hasOnlyAllowedFields(data, [
+          'name', 'email', 'vocalRange', 'eventId', 'eventTitle', 'createdAt'
+        ])
+        && data.eventId == eventId
+        && data.email is string
+        && data.email == registrationId
+        && data.email.size() <= 254
+        && data.email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
+        && isBoundedString(data, 'name', 1, 100)
+        && isBoundedString(data, 'vocalRange', 1, 50)
+        && isOptionalString(data, 'eventTitle', 120)
+        && data.createdAt == request.time;
     }
 
     function isValidTeacher(data) {
@@ -231,10 +281,17 @@ service cloud.firestore {
       allow create: if isAdmin()
         && isValidSchedule(request.resource.data)
         && isNewContent();
-      allow update: if isAdmin()
-        && isValidSchedule(request.resource.data)
-        && isUpdatedContent();
+      allow update: if (isAdmin()
+          && isValidSchedule(request.resource.data)
+          && isUpdatedContent())
+        || isRegistrationIncrement();
       allow delete: if isAdmin();
+
+      match /registrations/{registrationId} {
+        allow read: if isAdmin();
+        allow create: if isValidWorkshopRegistration(documentId, registrationId);
+        allow update, delete: if isAdmin();
+      }
     }
 
     match /teachers/{documentId} {

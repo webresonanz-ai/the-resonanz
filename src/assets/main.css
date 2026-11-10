@@ -47,6 +47,23 @@ body {
 
 html {
   scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Slightly denser type + chrome on phones so more fits on screen. */
+@media (max-width: 640px) {
+  html {
+    font-size: 15px;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border-width: 1px;
+  }
 }
 
 ::selection {
