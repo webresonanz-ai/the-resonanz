@@ -2,7 +2,7 @@
 // Schedule-specific Firestore operations
 // Workshop registrations live in `schedules/{eventId}/registrations`.
 // Registration documents use an incrementing id (000001, 000002, …) and an
-// email lookup document (`registrationEmails/{hash}`) prevents duplicates.
+// email-and-name lookup document (`registrationEmails/{hash}`) prevents duplicates.
 // ============================================================
 import {
   collection,
@@ -77,8 +77,8 @@ function formatRegistrationId(number) {
   return String(number).padStart(6, '0')
 }
 
-async function buildRegistrationLookupId(eventId, email) {
-  const payload = `${eventId}\n${email}`
+async function buildRegistrationLookupId(eventId, email, name) {
+  const payload = `${eventId}\n${email}\n${name}`
   const bytes = new TextEncoder().encode(payload)
 
   if (globalThis.crypto?.subtle) {
@@ -103,9 +103,10 @@ function getDatabase() {
 export async function registerForWorkshop(eventId, { name, email, vocalRange }) {
   const database = getDatabase()
   const normalizedEmail = email.trim().toLowerCase()
+  const normalizedName = name.trim().toLowerCase().replace(/\s+/g, ' ')
   const eventRef = doc(database, 'schedules', eventId)
   const counterRef = doc(database, 'counters', 'registrations')
-  const lookupId = await buildRegistrationLookupId(eventId, normalizedEmail)
+  const lookupId = await buildRegistrationLookupId(eventId, normalizedEmail, normalizedName)
   const lookupRef = doc(database, 'registrationEmails', lookupId)
 
   let ticketId = ''
@@ -127,7 +128,7 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
     }
 
     if (lookupSnap.exists()) {
-      throw new Error('This email is already registered for this workshop.')
+      throw new Error('This name and email are already registered for this workshop.')
     }
 
     const capacity = Number(event.capacity) || 0
