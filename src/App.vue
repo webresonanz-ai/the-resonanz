@@ -1,6 +1,14 @@
 <script setup>
-import { RouterView, RouterLink } from 'vue-router'
+import { RouterView, RouterLink, useRoute, useRouter } from 'vue-router'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
+
+const route = useRoute()
+const router = useRouter()
+const authStore = useAuthStore()
+
+// Full-screen auth pages (login/register) skip the dashboard shell
+const isAuthLayout = computed(() => route.meta.layout === 'auth')
 
 /* ---- Responsive sidebar state ----
  * Desktop (lg+): `collapsed` toggles width (w-64 <-> w-20)
@@ -21,6 +29,12 @@ const toggleSidebar = () => {
 
 const closeMobile = () => {
   mobileOpen.value = false
+}
+
+const handleLogout = async () => {
+  await authStore.logout()
+  closeMobile()
+  router.push({ name: 'login' })
 }
 
 let mql = null
@@ -78,7 +92,17 @@ const navigation = [
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-maroon-950 text-bone-200 font-sans relative">
+  <!-- ===== Auth layout (full-screen, no shell) ===== -->
+  <div v-if="isAuthLayout" class="min-h-screen bg-maroon-950">
+    <RouterView v-slot="{ Component }">
+      <Transition name="page" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </RouterView>
+  </div>
+
+  <!-- ===== Dashboard layout ===== -->
+  <div v-else class="flex h-screen overflow-hidden bg-maroon-950 text-bone-200 font-sans relative">
     <!-- Ambient background orbs -->
     <div class="pointer-events-none fixed inset-0 overflow-hidden z-0">
       <div class="absolute -top-40 -left-40 w-[30rem] h-[30rem] rounded-full bg-maroon-500/15 blur-[130px] animate-float"></div>
@@ -154,12 +178,33 @@ const navigation = [
         </RouterLink>
       </nav>
 
-      <!-- Sidebar footer badge -->
+      <!-- User card + login/logout -->
       <div v-if="showText" class="px-4 py-3 border-t border-maroon-700/50 flex-shrink-0">
         <div class="rounded-xl bg-gradient-to-br from-gold-500/10 to-transparent border border-gold-500/20 p-3">
-          <p class="text-xs text-bone-300 leading-relaxed">
-            <span class="text-gold-400 font-semibold">Premium</span> academy member
-          </p>
+          <template v-if="authStore.isAuthenticated">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="w-8 h-8 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 text-xs font-bold flex-shrink-0">
+                {{ authStore.initials }}
+              </div>
+              <p class="text-xs text-bone-300 truncate flex-1">{{ authStore.user?.email }}</p>
+            </div>
+            <button
+              @click="handleLogout"
+              class="mt-2.5 w-full flex items-center justify-center gap-2 py-1.5 rounded-lg bg-maroon-800/60 hover:bg-maroon-700/70 border border-maroon-700/50 hover:border-rose-600/40 text-bone-400 hover:text-rose-300 text-xs font-medium transition-all"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+              Sign out
+            </button>
+          </template>
+
+          <RouterLink
+            v-else
+            to="/login"
+            class="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 text-sm font-semibold hover:shadow-lg hover:shadow-gold-500/20 transition-all"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>
+            Login
+          </RouterLink>
         </div>
       </div>
 
@@ -205,7 +250,8 @@ const navigation = [
           <div class="min-w-0">
             <p class="text-[10px] sm:text-xs uppercase tracking-[0.25em] text-bone-500 hidden sm:block">Music Academy</p>
             <h2 class="text-base sm:text-xl font-light text-bone-200 truncate">
-              Welcome back, <span class="text-gold-gradient font-semibold">Maestro</span>
+              <template v-if="authStore.isAuthenticated">Welcome back, <span class="text-gold-gradient font-semibold">{{ authStore.displayName }}</span></template>
+              <template v-else>Welcome to <span class="text-gold-gradient font-semibold">Resonanz</span></template>
             </h2>
           </div>
         </div>
@@ -223,22 +269,33 @@ const navigation = [
             />
           </div>
 
-          <!-- Notification -->
-          <button class="relative p-2 text-bone-400 hover:text-gold-400 transition-colors" aria-label="Notifications">
-            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-            </svg>
-            <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-gold-500 rounded-full">
-              <span class="ping-gold"></span>
-            </span>
-          </button>
+          <template v-if="authStore.isAuthenticated">
+            <!-- Notification -->
+            <button class="relative p-2 text-bone-400 hover:text-gold-400 transition-colors" aria-label="Notifications">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 17h5l-1.4-1.4A2 2 0 0118 14.2V11a6 6 0 10-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span class="absolute top-1.5 right-1.5 w-2 h-2 bg-gold-500 rounded-full">
+                <span class="ping-gold"></span>
+              </span>
+            </button>
 
-          <!-- Avatar -->
-          <div
-            class="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 font-bold ring-2 ring-gold-500/30 hover:ring-gold-400/60 transition-all cursor-pointer select-none flex-shrink-0"
+            <!-- Avatar -->
+            <div
+              class="w-10 h-10 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 flex items-center justify-center text-maroon-950 font-bold ring-2 ring-gold-500/30 hover:ring-gold-400/60 transition-all cursor-pointer select-none flex-shrink-0"
+            >
+              {{ authStore.initials }}
+            </div>
+          </template>
+
+          <RouterLink
+            v-else
+            to="/login"
+            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-gold-500 to-gold-600 text-maroon-950 font-semibold text-sm hover:shadow-lg hover:shadow-gold-500/30 hover:-translate-y-0.5 transition-all flex items-center gap-2 flex-shrink-0"
           >
-            M
-          </div>
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" /></svg>
+            Login
+          </RouterLink>
         </div>
       </header>
 
