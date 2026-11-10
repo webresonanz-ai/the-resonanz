@@ -40,7 +40,14 @@ const filteredAudiences = computed(() => {
   const term = search.value.trim().toLowerCase()
   if (!term) return audiences.value
   return audiences.value.filter((guest) =>
-    [guest.name, guest.email, guest.vocalRange, guest.eventTitle, guest.ticketId].some((value) =>
+    [
+      guest.name,
+      guest.email,
+      guest.vocalRange,
+      guest.eventTitle,
+      guest.ticketId,
+      guest.registrationId,
+    ].some((value) =>
       String(value || '')
         .toLowerCase()
         .includes(term),
@@ -135,7 +142,11 @@ async function saveGuest() {
 
   saving.value = true
   try {
-    await updateWorkshopRegistration(editing.value.eventId, editing.value.email, form.value)
+    await updateWorkshopRegistration(
+      editing.value.eventId,
+      editing.value.registrationId || editing.value.id,
+      form.value,
+    )
     notice.value = 'Guest details updated.'
     closeEdit()
   } catch (err) {
@@ -221,6 +232,11 @@ onUnmounted(() => {
               <span
                 class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
                 >{{ guest.vocalRange }}</span
+              >
+              <span
+                v-if="guest.registrationId"
+                class="px-2 py-0.5 rounded-full border border-gold-500/20 bg-gold-500/5 text-[10px] font-mono text-gold-300"
+                >#{{ guest.registrationId }}</span
               >
             </div>
             <p class="text-xs text-bone-500 mt-0.5 truncate">{{ guest.email }}</p>
@@ -314,8 +330,20 @@ onUnmounted(() => {
                   class="w-full rounded-lg border border-maroon-700/40 bg-maroon-950/40 px-3 py-2 text-sm text-bone-500 cursor-not-allowed"
                 />
                 <p class="mt-1.5 text-xs text-bone-500">
-                  Email is the registration identifier and cannot be changed.
+                  Email is used for duplicate checks and cannot be changed.
                 </p>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-bone-400 mb-1.5"
+                  >Registration ID</label
+                >
+                <input
+                  :value="editing.registrationId || '—'"
+                  type="text"
+                  disabled
+                  class="w-full rounded-lg border border-maroon-700/40 bg-maroon-950/40 px-3 py-2 text-sm font-mono text-gold-300/80 cursor-not-allowed"
+                />
               </div>
 
               <div>

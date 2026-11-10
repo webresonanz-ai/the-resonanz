@@ -1,7 +1,8 @@
 // ============================================================
 // Schedule-specific Firestore operations
 // Workshop registrations live in `schedules/{eventId}/registrations`.
-// The email is used as the document id so a guest cannot register twice.
+// Registration documents use an incrementing id (000001, 000002, …) and an
+// email lookup document (`registrationEmails/{hash}`) prevents duplicates.
 // ============================================================
 import {
   collection,
@@ -53,10 +54,28 @@ function normalizeEventCode(value) {
     .replace(/^_+|_+$/g, '')
 }
 
-export function generateTicketId(eventCode) {
+export function generateTicketId(eventCode, registrationId) {
   const code = normalizeEventCode(eventCode) || 'WS'
   const timestamp = String(Date.now()).slice(-9).padStart(9, '0')
-  return `${code}_${timestamp}_${randomTicketSuffix()}`
+  return `${code}_${registrationId}_${timestamp}_${randomTicketSuffix()}`
+}
+
+function formatRegistrationId(number) {
+  return String(number).padStart(6, '0')
+}
+
+async function buildRegistrationLookupId(eventId, email) {
+  const payload = `${eventId}\n${email}`
+  const bytes = new TextEncoder().encode(payload)
+
+  if (globalThis.crypto?.subtle) {
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+
+  let binary = ''
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
 function getDatabase() {
@@ -72,22 +91,27 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
   const database = getDatabase()
   const normalizedEmail = email.trim().toLowerCase()
   const eventRef = doc(database, 'schedules', eventId)
-  const registrationRef = doc(
-    database,
-    'schedules',
-    eventId,
-    'registrations',
-    normalizedEmail
-  )
+  const counterRef = doc(database, 'counters', 'registrations')
+  const lookupId = await buildRegistrationLookupId(eventId, normalizedEmail)
+  const lookupRef = doc(database, 'registrationEmails', lookupId)
 
   let ticketId = ''
+  let registrationId = ''
+
   await runTransaction(database, async (transaction) => {
     const eventSnap = await transaction.get(eventRef)
     if (!eventSnap.exists()) throw new Error('This event no longer exists.')
 
+    const counterSnap = await transaction.get(counterRef)
+    const lookupSnap = await transaction.get(lookupRef)
+
     const event = eventSnap.data()
     if (event.type !== 'Workshop') {
       throw new Error('This event is not open for workshop registration.')
+    }
+
+    if (lookupSnap.exists()) {
+      throw new Error('This email is already registered for this workshop.')
     }
 
     const capacity = Number(event.capacity) || 0
@@ -100,21 +124,37 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
       throw new Error('This workshop is full.')
     }
 
-    ticketId = generateTicketId(event.eventId || eventId)
+    const registrationNumber = (Number(counterSnap.data()?.count) || 0) + 1
+    registrationId = formatRegistrationId(registrationNumber)
+    const registrationRef = doc(database, 'schedules', eventId, 'registrations', registrationId)
+    ticketId = generateTicketId(event.eventId || eventId, registrationId)
 
     transaction.set(registrationRef, {
       name: name.trim(),
       email: normalizedEmail,
       vocalRange: vocalRange.trim(),
+      registrationId,
+      registrationNumber,
+      lookupId,
       ticketId,
       eventId,
       eventTitle: event.title || '',
       createdAt: serverTimestamp(),
     })
+    transaction.set(lookupRef, {
+      eventId,
+      registrationId,
+      createdAt: serverTimestamp(),
+    })
+    if (counterSnap.exists()) {
+      transaction.update(counterRef, { count: registrationNumber })
+    } else {
+      transaction.set(counterRef, { count: registrationNumber })
+    }
     transaction.update(eventRef, { registrationCount: registered + 1 })
   })
 
-  return ticketId
+  return { ticketId, registrationId }
 }
 
 export function subscribeToWorkshopRegistrations(eventId, onData, onError) {
@@ -131,10 +171,10 @@ export function subscribeToWorkshopRegistrations(eventId, onData, onError) {
   )
 }
 
-export async function updateWorkshopRegistration(eventId, email, { name, vocalRange }) {
+export async function updateWorkshopRegistration(eventId, registrationId, { name, vocalRange }) {
   const database = getDatabase()
   return updateDoc(
-    doc(database, 'schedules', eventId, 'registrations', email),
+    doc(database, 'schedules', eventId, 'registrations', registrationId),
     {
       name: name.trim(),
       vocalRange: vocalRange.trim(),

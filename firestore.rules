@@ -18,9 +18,11 @@ service cloud.firestore {
     // Schedules: title, type, date, startTime, endTime, venue, ticketURL,
     // bannerURL, capacity, registrationCount, eventId (workshops only).
     // Workshop registrations are stored
-    // at schedules/{eventId}/registrations/{email} and increment registrationCount.
-    // Registration fields: name, email, vocalRange, ticketId, eventId,
-    // eventTitle, createdAt.
+    // at schedules/{eventId}/registrations/{registrationId} and increment
+    // registrationCount. Registration ids come from counters/registrations.
+    // Duplicate emails are tracked by registrationEmails/{hash}.
+    // Registration fields: name, email, vocalRange, registrationId,
+    // registrationNumber, lookupId, ticketId, eventId, eventTitle, createdAt.
     // Teachers: name, specialty, bio, photoURL, email, profileURL.
     // News: category, title, excerpt, date, readTime, featured.
     // Site content is intentionally public-readable; only admins can write.
@@ -165,6 +167,28 @@ service cloud.firestore {
         && request.resource.data.registrationCount <= resource.data.get('capacity', 0);
     }
 
+    function isNextRegistrationNumber(number) {
+      let counterPath = /databases/$(database)/documents/counters/registrations;
+      let after = getAfter(counterPath).data;
+
+      return after.count == number
+        && (
+          (!exists(counterPath) && after.count == 1)
+          || (exists(counterPath) && get(counterPath).data.count + 1 == after.count)
+        );
+    }
+
+    function isValidRegistrationLookup(lookupId, data) {
+      let registration = getAfter(
+        /databases/$(database)/documents/schedules/$(data.eventId)/registrations/$(data.registrationId)
+      ).data;
+
+      return registration.lookupId == lookupId
+        && registration.eventId == data.eventId
+        && registration.registrationId == data.registrationId
+        && registration.createdAt == data.createdAt;
+    }
+
     function isValidWorkshopRegistration(eventId, registrationId) {
       let before = get(/databases/$(database)/documents/schedules/$(eventId)).data;
       let after = getAfter(/databases/$(database)/documents/schedules/$(eventId)).data;
@@ -176,14 +200,32 @@ service cloud.firestore {
         && after.get('registrationCount', 0) == before.get('registrationCount', 0) + 1
         && after.get('registrationCount', 0) <= before.get('capacity', 0)
         && hasRequiredFields(data, [
-          'name', 'email', 'vocalRange', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'registrationId', 'registrationNumber',
+          'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && hasOnlyAllowedFields(data, [
-          'name', 'email', 'vocalRange', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'registrationId', 'registrationNumber',
+          'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && data.eventId == eventId
+        && data.registrationId == registrationId
+        && data.registrationId is string
+        && data.registrationId.matches('^[0-9]{6}$')
+        && data.registrationNumber is int
+        && data.registrationNumber >= 1
+        && data.registrationNumber <= 999999
+        && int(data.registrationId) == data.registrationNumber
+        && isNextRegistrationNumber(data.registrationNumber)
+        && data.lookupId is string
+        && data.lookupId.size() >= 1
+        && data.lookupId.size() <= 200
+        && getAfter(
+          /databases/$(database)/documents/registrationEmails/$(data.lookupId)
+        ).data.registrationId == registrationId
+        && getAfter(
+          /databases/$(database)/documents/registrationEmails/$(data.lookupId)
+        ).data.eventId == eventId
         && data.email is string
-        && data.email == registrationId
         && data.email.size() <= 254
         && data.email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
         && isBoundedString(data, 'name', 1, 100)
@@ -300,6 +342,34 @@ service cloud.firestore {
         allow create: if isValidWorkshopRegistration(documentId, registrationId);
         allow update, delete: if isAdmin();
       }
+    }
+
+    match /counters/{counterId} {
+      allow read: if true;
+      allow create: if counterId == 'registrations'
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count is int
+        && request.resource.data.count == 1;
+      allow update: if counterId == 'registrations'
+        && request.resource.data.keys().hasOnly(['count'])
+        && request.resource.data.count is int
+        && request.resource.data.count == resource.data.count + 1;
+      allow delete: if false;
+    }
+
+    match /registrationEmails/{lookupId} {
+      allow read: if true;
+      allow create: if hasRequiredFields(request.resource.data, [
+          'eventId', 'registrationId', 'createdAt'
+        ])
+        && hasOnlyAllowedFields(request.resource.data, [
+          'eventId', 'registrationId', 'createdAt'
+        ])
+        && request.resource.data.eventId is string
+        && request.resource.data.registrationId is string
+        && request.resource.data.createdAt == request.time
+        && isValidRegistrationLookup(lookupId, request.resource.data);
+      allow update, delete: if isAdmin();
     }
 
     match /teachers/{documentId} {

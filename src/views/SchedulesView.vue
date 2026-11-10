@@ -173,12 +173,12 @@ async function submitRegistration() {
 
   submitting.value = true
   try {
-    const ticketId = await registerForWorkshop(selectedEvent.value.id, {
+    const result = await registerForWorkshop(selectedEvent.value.id, {
       name: registration.name,
       email: registration.email,
       vocalRange: registration.vocalRange,
     })
-    registrationTicket.value = ticketId
+    registrationTicket.value = result.ticketId
     registrationMessage.value = 'You are registered! We look forward to seeing you.'
     registration.name = ''
     registration.vocalRange = ''
