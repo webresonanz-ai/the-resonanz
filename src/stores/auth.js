@@ -59,6 +59,10 @@ export const useAuthStore = defineStore('auth', () => {
 
   const isAuthenticated = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
+  // Scanners and admins can both access the QR check-in page.
+  const isScanner = computed(
+    () => user.value?.role === 'scanner' || user.value?.role === 'admin'
+  )
   const isConfigured = isFirebaseConfigured
 
   const displayName = computed(
@@ -188,6 +192,7 @@ export const useAuthStore = defineStore('auth', () => {
     initialized,
     isAuthenticated,
     isAdmin,
+    isScanner,
     isConfigured,
     displayName,
     initials,

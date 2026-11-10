@@ -15,7 +15,6 @@ import {
   ensureDriveAccessToken,
   hasValidAccessToken,
 } from '@/firebase/drive'
-import AdminAudiences from '@/components/AdminAudiences.vue'
 
 const schemas = {
   courses: {
@@ -86,7 +85,6 @@ const schemas = {
 }
 
 const activeCollection = ref('courses')
-const showAudiences = ref(false)
 const records = ref([])
 const loading = ref(true)
 const saving = ref(false)
@@ -195,26 +193,8 @@ function closeScheduleModal() {
 }
 
 function selectSection(key) {
-  if (key === 'audiences') {
-    showAudiences.value = true
-    scheduleModalOpen.value = false
-    unsubscribe?.()
-    unsubscribe = undefined
-    records.value = []
-    loading.value = false
-    error.value = ''
-    notice.value = ''
-    return
-  }
-
-  const wasAudiences = showAudiences.value
-  showAudiences.value = false
-  if (wasAudiences) {
-    if (activeCollection.value === key) loadCollection(key)
-    else activeCollection.value = key
-  } else {
-    activeCollection.value = key
-  }
+  if (activeCollection.value === key) return
+  activeCollection.value = key
 }
 
 async function triggerDriveUpload(fileInput) {
@@ -469,28 +449,19 @@ onUnmounted(() => unsubscribe?.())
 
     <div class="flex flex-wrap gap-2" aria-label="Content section">
       <button
-        type="button"
-        class="px-3 py-1.5 rounded-xl border text-[13px] sm:text-sm font-medium transition-colors"
-        :class="showAudiences ? 'border-gold-500/50 bg-gold-500/10 text-gold-300' : 'border-maroon-700/60 text-bone-400 hover:text-bone-200'"
-        @click="selectSection('audiences')"
-      >Audiences</button>
-      <button
         v-for="(section, key) in CONTENT_COLLECTIONS"
         :key="key"
         type="button"
         class="px-3 py-1.5 rounded-xl border text-[13px] sm:text-sm font-medium transition-colors"
-        :class="!showAudiences && activeCollection === key ? 'border-gold-500/50 bg-gold-500/10 text-gold-300' : 'border-maroon-700/60 text-bone-400 hover:text-bone-200'"
+        :class="activeCollection === key ? 'border-gold-500/50 bg-gold-500/10 text-gold-300' : 'border-maroon-700/60 text-bone-400 hover:text-bone-200'"
         @click="selectSection(key)"
       >{{ section.label }}</button>
     </div>
 
-    <AdminAudiences v-if="showAudiences" />
+    <div v-if="error && !scheduleModalOpen" role="alert" class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200">{{ error }}</div>
+    <div v-if="notice && !scheduleModalOpen" role="status" class="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-3 sm:p-4 text-sm text-emerald-200">{{ notice }}</div>
 
-    <template v-else>
-      <div v-if="error && !scheduleModalOpen" role="alert" class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200">{{ error }}</div>
-      <div v-if="notice && !scheduleModalOpen" role="status" class="rounded-xl border border-emerald-700/40 bg-emerald-950/20 p-3 sm:p-4 text-sm text-emerald-200">{{ notice }}</div>
-
-      <div :class="activeCollection === 'schedules' ? '' : 'grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]'">
+    <div :class="activeCollection === 'schedules' ? '' : 'grid gap-4 sm:gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(20rem,0.8fr)]'">
       <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
         <div class="flex items-center justify-between gap-3 sm:gap-4 p-4 sm:p-5 border-b border-maroon-700/50">
           <div>
@@ -572,7 +543,6 @@ onUnmounted(() => unsubscribe?.())
         </form>
       </section>
     </div>
-    </template>
 
     <Teleport to="body">
       <Transition name="fade">

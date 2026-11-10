@@ -18,6 +18,9 @@ const registrationsByEvent = ref({})
 const registrationError = ref('')
 const notice = ref('')
 const search = ref('')
+const selectedEventId = ref('')
+const page = ref(1)
+const PAGE_SIZE = 8
 const editing = ref(null)
 const form = ref({ name: '', vocalRange: '' })
 const formError = ref('')
@@ -42,9 +45,10 @@ const audiences = computed(() =>
 
 const filteredAudiences = computed(() => {
   const term = search.value.trim().toLowerCase()
-  if (!term) return audiences.value
-  return audiences.value.filter((guest) =>
-    [
+  return audiences.value.filter((guest) => {
+    if (selectedEventId.value && guest.eventId !== selectedEventId.value) return false
+    if (!term) return true
+    return [
       guest.name,
       guest.email,
       guest.vocalRange,
@@ -55,8 +59,33 @@ const filteredAudiences = computed(() => {
       String(value || '')
         .toLowerCase()
         .includes(term),
-    ),
-  )
+    )
+  })
+})
+
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(filteredAudiences.value.length / PAGE_SIZE)),
+)
+
+const paginatedAudiences = computed(() => {
+  const start = (page.value - 1) * PAGE_SIZE
+  return filteredAudiences.value.slice(start, start + PAGE_SIZE)
+})
+
+const pageStart = computed(() =>
+  filteredAudiences.value.length ? (page.value - 1) * PAGE_SIZE + 1 : 0,
+)
+
+const pageEnd = computed(() =>
+  Math.min(page.value * PAGE_SIZE, filteredAudiences.value.length),
+)
+
+watch([search, selectedEventId], () => {
+  page.value = 1
+})
+
+watch(pageCount, (count) => {
+  if (page.value > count) page.value = count
 })
 
 watch(
@@ -109,6 +138,19 @@ function formatDate(value) {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
+  })
+}
+
+function formatDateTime(value) {
+  if (!value) return ''
+  const date = value?.toDate ? value.toDate() : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -295,22 +337,42 @@ onUnmounted(() => {
 
     <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
       <div
-        class="flex flex-wrap items-center justify-between gap-3 sm:gap-4 p-4 sm:p-5 border-b border-maroon-700/50"
+        class="flex flex-col gap-3 sm:gap-4 p-4 sm:p-5 border-b border-maroon-700/50 lg:flex-row lg:items-center lg:justify-between"
       >
         <div>
           <h2 class="text-base sm:text-lg font-serif text-bone-100">Workshop audiences</h2>
           <p class="text-xs text-bone-500 mt-1">
-            {{ audiences.length }} registered guest{{ audiences.length === 1 ? '' : 's' }} across
-            {{ workshopEvents.length }} workshop{{ workshopEvents.length === 1 ? '' : 's' }}
+            <template v-if="search || selectedEventId">
+              {{ filteredAudiences.length }} of {{ audiences.length }} guest{{
+                audiences.length === 1 ? '' : 's'
+              }}
+            </template>
+            <template v-else>
+              {{ audiences.length }} registered guest{{ audiences.length === 1 ? '' : 's' }} across
+              {{ workshopEvents.length }} workshop{{ workshopEvents.length === 1 ? '' : 's' }}
+            </template>
           </p>
         </div>
-        <div class="relative w-full sm:w-64">
-          <input
-            v-model="search"
-            type="search"
-            placeholder="Search name, email, ticket or event…"
-            class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 placeholder:text-bone-500 outline-none focus:border-gold-500/60"
-          />
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <label class="sr-only" for="audience-event-filter">Filter by workshop</label>
+          <select
+            id="audience-event-filter"
+            v-model="selectedEventId"
+            class="w-full sm:w-52 rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60"
+          >
+            <option value="">All workshops</option>
+            <option v-for="event in workshopEvents" :key="event.id" :value="event.id">
+              {{ event.title }}
+            </option>
+          </select>
+          <div class="relative w-full sm:w-64">
+            <input
+              v-model="search"
+              type="search"
+              placeholder="Search name, email, ticket…"
+              class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 placeholder:text-bone-500 outline-none focus:border-gold-500/60"
+            />
+          </div>
         </div>
       </div>
 
@@ -323,63 +385,131 @@ onUnmounted(() => {
       </div>
       <div v-else-if="!filteredAudiences.length" class="p-4 sm:p-6 text-bone-400">
         {{
-          search ? 'No guests match your search.' : 'No guests have registered for a workshop yet.'
+          search || selectedEventId
+            ? 'No guests match your filters.'
+            : 'No guests have registered for a workshop yet.'
         }}
       </div>
-      <ul
-        v-else
-        class="divide-y divide-maroon-800/70 max-h-[30rem] sm:max-h-[38rem] overflow-y-auto"
-      >
-        <li
-          v-for="guest in filteredAudiences"
-          :key="`${guest.eventId}-${guest.email}`"
-          class="flex flex-wrap items-center gap-3 p-3 sm:p-4 hover:bg-maroon-800/30"
-        >
-          <div
-            class="flex w-10 h-10 flex-shrink-0 items-center justify-center rounded-full border border-gold-500/25 bg-gold-500/10 text-sm font-semibold text-gold-300"
+      <template v-else>
+        <ul class="divide-y divide-maroon-800/70">
+          <li
+            v-for="guest in paginatedAudiences"
+            :key="`${guest.eventId}-${guest.email}`"
+            class="p-3 sm:p-4 hover:bg-maroon-800/30"
           >
-            {{ initials(guest) }}
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <span class="text-sm font-medium text-bone-200 truncate">{{ guest.name }}</span>
-              <span
-                class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
-                >{{ guest.vocalRange }}</span
-              >
-              <span
-                v-if="guest.registrationId"
-                class="px-2 py-0.5 rounded-full border border-gold-500/20 bg-gold-500/5 text-[10px] font-mono text-gold-300"
-                >#{{ guest.registrationId }}</span
-              >
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+              <div class="flex min-w-0 flex-1 items-start gap-3">
+                <div
+                  class="flex w-10 h-10 flex-shrink-0 items-center justify-center rounded-full border border-gold-500/25 bg-gold-500/10 text-sm font-semibold text-gold-300"
+                >
+                  {{ initials(guest) }}
+                </div>
+                <div class="min-w-0 flex-1 space-y-1.5">
+                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <span class="text-sm font-medium text-bone-200 break-words">{{
+                      guest.name
+                    }}</span>
+                    <span
+                      class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
+                      >{{ guest.vocalRange }}</span
+                    >
+                    <span
+                      v-if="guest.registrationId"
+                      class="px-2 py-0.5 rounded-full border border-gold-500/20 bg-gold-500/5 text-[10px] font-mono text-gold-300"
+                      >#{{ guest.registrationId }}</span
+                    >
+                    <span
+                      class="px-2 py-0.5 rounded-full border text-[10px] font-medium"
+                      :class="
+                        guest.checkedIn
+                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                          : 'border-maroon-600/50 bg-maroon-800/40 text-bone-400'
+                      "
+                    >
+                      {{ guest.checkedIn ? 'Checked in' : 'Not checked in' }}
+                    </span>
+                  </div>
+                  <p class="text-xs text-bone-500 break-all sm:truncate">{{ guest.email }}</p>
+                  <div
+                    class="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3"
+                  >
+                    <p class="min-w-0">
+                      <span class="text-bone-500">Ticket </span>
+                      <span class="font-mono text-gold-300/80 break-all">{{
+                        guest.ticketId || '—'
+                      }}</span>
+                    </p>
+                    <p class="min-w-0">
+                      <span class="text-bone-500">Workshop </span>
+                      <span class="text-bone-300">{{ guest.eventTitle }}</span>
+                      <span v-if="guest.eventDate" class="text-bone-500"
+                        >· {{ formatDate(guest.eventDate) }}</span
+                      >
+                    </p>
+                    <p class="min-w-0">
+                      <span class="text-bone-500">Check-in </span>
+                      <span :class="guest.checkedIn ? 'text-emerald-300' : 'text-bone-500'">{{
+                        guest.checkedIn ? formatDateTime(guest.checkedInAt) || 'Checked in' : '—'
+                      }}</span>
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div class="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
+                <button
+                  type="button"
+                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId)"
+                  :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
+                  class="flex-1 rounded-lg border border-gold-500/30 px-3 py-1.5 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                  @click="downloadTicket(guest)"
+                >
+                  {{
+                    downloadingTicketId === `${guest.eventId}-${guest.registrationId || guest.id}`
+                      ? 'Generating…'
+                      : 'Download ticket PDF'
+                  }}
+                </button>
+                <button
+                  type="button"
+                  class="flex-1 rounded-lg border border-maroon-700/60 px-3 py-1.5 text-xs text-bone-300 hover:text-gold-300 sm:flex-none"
+                  @click="openEdit(guest)"
+                >
+                  Edit
+                </button>
+              </div>
             </div>
-            <p class="text-xs text-bone-500 mt-0.5 truncate">{{ guest.email }}</p>
-            <p class="text-xs font-mono text-gold-300/80 mt-0.5 truncate">
-              {{ guest.ticketId || 'No ticket ID' }}
-            </p>
-            <p class="text-xs text-bone-500 mt-1 truncate">
-              {{ guest.eventTitle
-              }}<template v-if="guest.eventDate"> · {{ formatDate(guest.eventDate) }}</template>
-            </p>
+          </li>
+        </ul>
+
+        <div
+          class="flex flex-col gap-3 border-t border-maroon-700/50 px-4 sm:px-5 py-3 text-xs text-bone-400 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <p>
+            Showing {{ pageStart }}–{{ pageEnd }} of {{ filteredAudiences.length }} guest{{
+              filteredAudiences.length === 1 ? '' : 's'
+            }}
+          </p>
+          <div class="flex items-center justify-between gap-2 sm:justify-end">
+            <button
+              type="button"
+              :disabled="page <= 1"
+              class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+              @click="page -= 1"
+            >
+              Previous
+            </button>
+            <span class="px-1 text-bone-500">Page {{ page }} of {{ pageCount }}</span>
+            <button
+              type="button"
+              :disabled="page >= pageCount"
+              class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+              @click="page += 1"
+            >
+              Next
+            </button>
           </div>
-          <button
-            type="button"
-            :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId)"
-            :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
-            class="px-3 py-1.5 rounded-lg border border-gold-500/30 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50"
-            @click="downloadTicket(guest)"
-          >
-            {{ downloadingTicketId === `${guest.eventId}-${guest.registrationId || guest.id}` ? 'Generating…' : 'Download ticket PDF' }}
-          </button>
-          <button
-            type="button"
-            class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300"
-            @click="openEdit(guest)"
-          >
-            Edit
-          </button>
-        </li>
-      </ul>
+        </div>
+      </template>
     </section>
 
     <Teleport to="body">
@@ -487,6 +617,37 @@ onUnmounted(() => {
                   disabled
                   class="w-full rounded-lg border border-maroon-700/40 bg-maroon-950/40 px-3 py-2 text-sm text-bone-500 cursor-not-allowed"
                 />
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-bone-400 mb-1.5">Check-in status</label>
+                <div
+                  class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
+                  :class="
+                    editing.checkedIn
+                      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                      : 'border-maroon-700/40 bg-maroon-950/40 text-bone-500'
+                  "
+                >
+                  <span
+                    class="w-2 h-2 rounded-full"
+                    :class="editing.checkedIn ? 'bg-emerald-400' : 'bg-bone-600'"
+                  ></span>
+                  {{ editing.checkedIn ? 'Checked in' : 'Not checked in yet' }}
+                </div>
+              </div>
+
+              <div v-if="editing.checkedIn">
+                <label class="block text-xs font-medium text-bone-400 mb-1.5">Check-in time</label>
+                <input
+                  :value="formatDateTime(editing.checkedInAt) || '—'"
+                  type="text"
+                  disabled
+                  class="w-full rounded-lg border border-maroon-700/40 bg-maroon-950/40 px-3 py-2 text-sm text-bone-300 cursor-not-allowed"
+                />
+                <p v-if="editing.checkedInByName || editing.checkedInBy" class="mt-1.5 text-xs text-bone-500">
+                  Checked in by {{ editing.checkedInByName || editing.checkedInBy }}
+                </p>
               </div>
 
               <div class="flex gap-3 pt-2">

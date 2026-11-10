@@ -44,6 +44,12 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
+    function isScanner() {
+      return isAuthenticated()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'scanner'];
+    }
+
     function uidUnchanged() {
       return !('uid' in request.resource.data)
         || request.resource.data.uid == request.auth.uid;
@@ -103,7 +109,7 @@ service cloud.firestore {
         && (data.displayName == null || isBoundedString(data, 'displayName', 0, 100))
         && (data.photoURL == null || (data.photoURL is string && data.photoURL.size() <= 500))
         && (data.provider == null || isBoundedString(data, 'provider', 1, 50))
-        && data.role in ['guest', 'admin']
+        && data.role in ['guest', 'admin', 'scanner']
         && data.createdAt is timestamp
         && data.updatedAt is timestamp
         && data.lastLoginAt is timestamp;
@@ -240,6 +246,22 @@ service cloud.firestore {
         && data.createdAt == request.time;
     }
 
+    // A scanner (or admin) flipping a registration's checkedIn flag to true
+    // for the first time. Only the check-in fields may be touched and the
+    // guest must not have been checked in already.
+    function isCheckInUpdate() {
+      return isScanner()
+        && resource.data.get('checkedIn', false) != true
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'checkedIn', 'checkedInAt', 'checkedInBy', 'checkedInByName'
+        ])
+        && request.resource.data.checkedIn == true
+        && request.resource.data.checkedInAt == request.time
+        && request.resource.data.checkedInBy == request.auth.uid
+        && request.resource.data.checkedInByName is string
+        && request.resource.data.checkedInByName.size() <= 200;
+    }
+
     function isValidTeacher(data) {
       return hasRequiredFields(data, [
           'name', 'specialty', 'bio', 'photoURL', 'email', 'profileURL',
@@ -340,9 +362,10 @@ service cloud.firestore {
       allow delete: if isAdmin();
 
       match /registrations/{registrationId} {
-        allow read: if isAdmin();
+        allow read: if isAdmin() || isScanner();
         allow create: if isValidWorkshopRegistration(documentId, registrationId);
-        allow update, delete: if isAdmin();
+        allow update: if isAdmin() || isCheckInUpdate();
+        allow delete: if isAdmin();
       }
     }
 
@@ -357,6 +380,16 @@ service cloud.firestore {
         && request.resource.data.count is int
         && request.resource.data.count == resource.data.count + 1;
       allow delete: if false;
+    }
+
+    // Collection group queries (collectionGroup('registrations') in
+    // src/firebase/checkin.js) are NOT authorized by the nested
+    // /schedules/{documentId}/registrations/{registrationId} rule above.
+    // Firestore requires an explicit rule for the collection group, written
+    // with a leading recursive wildcard. Without this, even admins get
+    // "Missing or insufficient permissions" on the ticket lookup.
+    match /{path=**}/registrations/{registrationId} {
+      allow read: if isAdmin() || isScanner();
     }
 
     match /registrationEmails/{lookupId} {

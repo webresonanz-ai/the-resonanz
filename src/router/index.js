@@ -39,6 +39,18 @@ const router = createRouter({
       meta: { admin: true },
     },
     {
+      path: '/audiences',
+      name: 'audiences',
+      component: () => import('../views/AudiencesView.vue'),
+      meta: { scanner: true },
+    },
+    {
+      path: '/scan',
+      name: 'scan',
+      component: () => import('../views/ScanView.vue'),
+      meta: { scanner: true },
+    },
+    {
       path: '/contact',
       name: 'contact',
       component: () => import('../views/ContactView.vue'),
@@ -71,6 +83,13 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.admin && !authStore.isAdmin) {
+    if (!authStore.isAuthenticated) {
+      return { name: 'login', query: { redirect: to.fullPath } }
+    }
+    return { name: 'home' }
+  }
+
+  if (to.meta.scanner && !authStore.isScanner) {
     if (!authStore.isAuthenticated) {
       return { name: 'login', query: { redirect: to.fullPath } }
     }
