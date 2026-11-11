@@ -253,11 +253,11 @@ async function downloadTicket(guest) {
     const page = pdf.getPages()[0]
     const { width, height } = page.getSize()
     const margin = width * 0.06
-    const contentWidth = width * 0.44
-    const contentCenterX = width - margin - contentWidth / 2
-    const nameSize = height * 0.033
-    const nameLineHeight = height * 0.098
-    const vocalRangeSize = height * 0.03
+    const contentWidth = width * 0.8
+    const contentCenterX = width / 2
+    const nameSize = height * 0.025
+    const nameLineHeight = height * 0.04
+    const vocalRangeSize = height * 0.02
     const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold)
     const qrCodeDataUrl = await QRCode.toDataURL(guest.ticketId, {
       errorCorrectionLevel: 'H',
@@ -283,7 +283,7 @@ async function downloadTicket(guest) {
     }
     if (currentLine) nameLines.push(currentLine)
 
-    let textY = height - margin - nameSize - 105
+    let textY = height - margin - nameSize - 455
     for (const line of nameLines) {
       const lineWidth = boldFont.widthOfTextAtSize(line, nameSize)
       page.drawText(line, {
@@ -306,9 +306,9 @@ async function downloadTicket(guest) {
       color: rgb(0, 0, 0),
     })
 
-    const qrSize = Math.min(width * 0.3, height * 0.27)
+    const qrSize = Math.min(width * 0.20, height * 0.15)
     const qrX = contentCenterX - qrSize / 2
-    const qrY = textY - height * 0.08 - qrSize
+    const qrY = textY - height * 0.045 - qrSize
     page.drawImage(qrCode, { x: qrX, y: qrY, width: qrSize, height: qrSize })
 
     const output = await pdf.save()
