@@ -21,10 +21,12 @@
 // ============================================================
 import {
   collectionGroup,
+  deleteField,
   doc,
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   where,
 } from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './config'
@@ -181,4 +183,66 @@ export async function checkInByTicketId(ticketId, scanner) {
   })
 
   return result
+}
+
+/**
+ * Check a workshop registration in manually from the admin audiences list.
+ * Mirrors the QR flow so check-in timestamps and staff attribution match.
+ *
+ * @param {string} eventId
+ * @param {string} registrationId
+ * @param {{ uid: string, displayName?: string, email?: string }} staff  The signed-in admin.
+ */
+export async function manuallyCheckIn(eventId, registrationId, staff) {
+  const database = getDatabase()
+
+  if (!eventId || !registrationId) {
+    throw new Error('Missing registration reference.')
+  }
+  if (!staff?.uid) {
+    throw new Error('You must be signed in to check in guests.')
+  }
+
+  const registrationRef = doc(database, 'schedules', eventId, 'registrations', registrationId)
+  const staffName = staff.displayName || staff.email || ''
+
+  await runTransaction(database, async (transaction) => {
+    const snapshot = await transaction.get(registrationRef)
+    if (!snapshot.exists()) {
+      throw new Error('This registration no longer exists.')
+    }
+    if (snapshot.data().checkedIn) {
+      throw new Error('This guest is already checked in.')
+    }
+
+    transaction.update(registrationRef, {
+      checkedIn: true,
+      checkedInAt: serverTimestamp(),
+      checkedInBy: staff.uid,
+      checkedInByName: staffName,
+    })
+  })
+}
+
+/**
+ * Remove a guest's check-in data so they can be checked in again.
+ * Deletes the check-in fields entirely (checkedIn, checkedInAt, checkedInBy,
+ * checkedInByName). Admins only — enforced by Firestore rules.
+ *
+ * @param {string} eventId
+ * @param {string} registrationId
+ */
+export async function removeCheckIn(eventId, registrationId) {
+  const database = getDatabase()
+
+  if (!eventId || !registrationId) {
+    throw new Error('Missing registration reference.')
+  }
+
+  await updateDoc(doc(database, 'schedules', eventId, 'registrations', registrationId), {
+    checkedIn: deleteField(),
+    checkedInAt: deleteField(),
+    checkedInBy: deleteField(),
+    checkedInByName: deleteField(),
+  })
 }

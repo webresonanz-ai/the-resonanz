@@ -13,6 +13,7 @@ import {
 } from '@/firebase/schedules'
 import { generateTicketPdf } from '@/firebase/tickets'
 import { sendAudienceConfirmationEmail } from '@/firebase/email'
+import { manuallyCheckIn, removeCheckIn } from '@/firebase/checkin'
 
 const authStore = useAuthStore()
 const {
@@ -38,6 +39,10 @@ const ticketDownloadError = ref('')
 const downloadingTicketId = ref('')
 const sendingEmailId = ref('')
 const emailError = ref('')
+const checkInBusyKey = ref('')
+const checkInError = ref('')
+const pendingRemoveCheckIn = ref(null)
+const removingCheckIn = ref(false)
 const registrationUnsubs = new Map()
 const importOpen = ref(false)
 const importStep = ref(1)
@@ -299,6 +304,57 @@ async function sendTicketEmail(guest) {
     emailError.value = err.message || 'Unable to send the confirmation email.'
   } finally {
     sendingEmailId.value = ''
+  }
+}
+
+async function toggleCheckIn(guest, event) {
+  if (!authStore.isAdmin) return
+  checkInError.value = ''
+  notice.value = ''
+
+  if (guest.checkedIn) {
+    if (event?.target) event.target.checked = true
+    openRemoveCheckIn(guest)
+    return
+  }
+
+  checkInBusyKey.value = guestKey(guest)
+  try {
+    await manuallyCheckIn(guest.eventId, guest.registrationId || guest.id, authStore.user)
+    notice.value = `${guest.name || 'Guest'} checked in.`
+  } catch (err) {
+    checkInError.value = err.message || 'Unable to check in this guest.'
+    if (event?.target) event.target.checked = false
+  } finally {
+    checkInBusyKey.value = ''
+  }
+}
+
+function openRemoveCheckIn(guest) {
+  if (!authStore.isAdmin) return
+  checkInError.value = ''
+  pendingRemoveCheckIn.value = guest
+}
+
+function closeRemoveCheckIn() {
+  if (removingCheckIn.value) return
+  pendingRemoveCheckIn.value = null
+}
+
+async function confirmRemoveCheckIn() {
+  const guest = pendingRemoveCheckIn.value
+  if (!guest || removingCheckIn.value) return
+
+  checkInError.value = ''
+  removingCheckIn.value = true
+  try {
+    await removeCheckIn(guest.eventId, guest.registrationId || guest.id)
+    notice.value = `Check-in removed for ${guest.name || 'this guest'}.`
+    pendingRemoveCheckIn.value = null
+  } catch (err) {
+    checkInError.value = err.message || 'Unable to remove this check-in.'
+  } finally {
+    removingCheckIn.value = false
   }
 }
 
@@ -564,6 +620,13 @@ onUnmounted(() => {
       class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200"
     >
       {{ emailError }}
+    </div>
+    <div
+      v-if="checkInError"
+      role="alert"
+      class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200"
+    >
+      {{ checkInError }}
     </div>
 
     <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
@@ -983,7 +1046,22 @@ onUnmounted(() => {
 
             <div class="hidden xl:block">
               <div class="flex items-center gap-2">
+                <input
+                  v-if="authStore.isAdmin"
+                  type="checkbox"
+                  class="h-4 w-4 flex-shrink-0 cursor-pointer rounded border-maroon-600/70 bg-maroon-950/60 text-emerald-500 accent-emerald-500 outline-none focus:ring-2 focus:ring-emerald-500/30 disabled:cursor-wait disabled:opacity-50"
+                  :checked="Boolean(guest.checkedIn)"
+                  :disabled="checkInBusyKey === guestKey(guest) || removingCheckIn"
+                  :aria-label="
+                    guest.checkedIn
+                      ? `Remove check-in for ${guest.name || 'this guest'}`
+                      : `Check in ${guest.name || 'this guest'}`
+                  "
+                  :title="guest.checkedIn ? 'Remove check-in' : 'Check in guest'"
+                  @change="toggleCheckIn(guest, $event)"
+                />
                 <span
+                  v-else
                   class="h-2 w-2 flex-shrink-0 rounded-full"
                   :class="guest.checkedIn ? 'bg-emerald-400' : 'bg-bone-600'"
                 ></span>
@@ -1021,7 +1099,21 @@ onUnmounted(() => {
                     : 'border-maroon-600/50 bg-maroon-800/40 text-bone-400'
                 "
               >
+                <input
+                  v-if="authStore.isAdmin"
+                  type="checkbox"
+                  class="h-3 w-3 cursor-pointer accent-emerald-500 disabled:cursor-wait disabled:opacity-50"
+                  :checked="Boolean(guest.checkedIn)"
+                  :disabled="checkInBusyKey === guestKey(guest) || removingCheckIn"
+                  :aria-label="
+                    guest.checkedIn
+                      ? `Remove check-in for ${guest.name || 'this guest'}`
+                      : `Check in ${guest.name || 'this guest'}`
+                  "
+                  @change="toggleCheckIn(guest, $event)"
+                />
                 <span
+                  v-else
                   class="h-1.5 w-1.5 rounded-full"
                   :class="guest.checkedIn ? 'bg-emerald-400' : 'bg-bone-500'"
                 ></span>
@@ -1333,6 +1425,65 @@ onUnmounted(() => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="pendingRemoveCheckIn"
+          class="fixed inset-0 z-50 flex items-center justify-center p-4"
+        >
+          <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeRemoveCheckIn"></div>
+
+          <div
+            class="relative w-full max-w-md rounded-2xl border border-maroon-700/60 bg-maroon-900 p-4 sm:p-6 shadow-2xl shadow-black/60 animate-scale-in"
+          >
+            <div class="mb-4 flex items-start gap-3">
+              <span
+                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-rose-300"
+              >
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                    d="M12 9v4m0 4h.01M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"
+                  />
+                </svg>
+              </span>
+              <div class="min-w-0">
+                <h2 class="text-lg font-serif text-bone-100">Remove check-in?</h2>
+                <p class="mt-1 text-sm text-bone-400">
+                  This clears the check-in time and staff record for
+                  <span class="font-medium text-bone-200">{{
+                    pendingRemoveCheckIn.name || 'this guest'
+                  }}</span
+                  >. They will show as not checked in.
+                </p>
+              </div>
+            </div>
+
+            <div class="flex gap-3 pt-2">
+              <button
+                type="button"
+                :disabled="removingCheckIn"
+                class="flex-1 rounded-lg bg-rose-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4 sm:py-2.5"
+                @click="confirmRemoveCheckIn"
+              >
+                {{ removingCheckIn ? 'Removing…' : 'Remove check-in' }}
+              </button>
+              <button
+                type="button"
+                :disabled="removingCheckIn"
+                class="rounded-lg border border-maroon-700/60 px-3 py-2 text-sm text-bone-300 transition-colors hover:text-bone-100 disabled:opacity-40 sm:px-4 sm:py-2.5"
+                @click="closeRemoveCheckIn"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       </Transition>
