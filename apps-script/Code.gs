@@ -198,18 +198,14 @@ function formatEventTime(event) {
 }
 
 function ticketFilename(event, registration) {
-  const base =
-    (event.title || 'ticket') +
-    '-' +
-    (registration.name || 'guest') +
-    '-' +
-    (registration.ticketId || '')
-  return (
-    base
-      .replace(/[<>:"/\\|?*]/g, '-')
-      .replace(/\s+/g, '-')
-      .slice(0, 150) + '.pdf'
-  )
+  const clean = function (value, fallback) {
+    return String(value || fallback)
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+  const base = clean(event.title, 'workshop') + '_' + clean(registration.name, 'guest')
+  return base.slice(0, 150) + '.pdf'
 }
 
 function buildEmail(event, registration) {
@@ -221,6 +217,10 @@ function buildEmail(event, registration) {
 
   const name = registration.name || 'Guest'
   const vocalRange = registration.vocalRange || 'Not specified'
+  const scoreViewRaw = String(registration.preferredScoreView || '').trim()
+  const scoreView = scoreViewRaw
+    ? scoreViewRaw.charAt(0).toUpperCase() + scoreViewRaw.slice(1).toLowerCase() + ' Score'
+    : ''
   const title = event.title || label
   const date = formatEventDate(event.date)
   const time = formatEventTime(event)
@@ -246,6 +246,7 @@ function buildEmail(event, registration) {
     ['Venue', venue],
     ['Name', name],
     ['Vocal Range', vocalRange],
+    ['Preferred Score View', scoreView],
   ].filter(function (entry) {
     return entry[1]
   })
