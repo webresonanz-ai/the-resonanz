@@ -32,8 +32,14 @@ export function ticketGuestName(name) {
 }
 
 export function ticketFilename(guest) {
-  const base = `${guest.eventTitle || 'workshop'}-${guest.name || 'guest'}-${guest.ticketId || ''}`
-  return `${base.replace(/[<>:"/\\|?*]/g, '-').replace(/\s+/g, '-').slice(0, 150)}.pdf`
+  const clean = (value, fallback) =>
+    String(value || fallback)
+      .replace(/[<>:"/\\|?*]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  const eventName = clean(guest.eventTitle, 'workshop')
+  const guestName = clean(guest.name, 'guest')
+  return `${`${eventName}_${guestName}`.slice(0, 150)}.pdf`
 }
 
 export async function generateTicketPdf(guest) {
@@ -103,8 +109,13 @@ export async function generateTicketPdf(guest) {
 
   textY -= height * 0.025
   const vocalRange = guest.vocalRange || 'Not specified'
-  page.drawText(vocalRange, {
-    x: contentCenterX - boldFont.widthOfTextAtSize(vocalRange, vocalRangeSize) / 2,
+  const scoreView = String(guest.preferredScoreView || '').trim()
+  const scoreViewLabel = scoreView
+    ? scoreView.charAt(0).toUpperCase() + scoreView.slice(1).toLowerCase()
+    : ''
+  const vocalRangeLine = scoreViewLabel ? `${vocalRange} - ${scoreViewLabel}` : vocalRange
+  page.drawText(vocalRangeLine, {
+    x: contentCenterX - boldFont.widthOfTextAtSize(vocalRangeLine, vocalRangeSize) / 2,
     y: textY,
     size: vocalRangeSize,
     font: boldFont,

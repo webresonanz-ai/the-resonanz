@@ -27,6 +27,17 @@ export const VOCAL_RANGES = [
   'Bass',
 ]
 
+export const SCORE_VIEW_OPTIONS = [
+  {
+    value: 'printed',
+    label: 'Printed (will be provided at the venue)',
+  },
+  {
+    value: 'digital',
+    label: 'Digital (bring your own iPad / tablet)',
+  },
+]
+
 function vocalRangeKey(value) {
   return String(value || '')
     .trim()
@@ -38,6 +49,22 @@ export function normalizeVocalRange(value) {
   const key = vocalRangeKey(value)
   if (!key) return ''
   return VOCAL_RANGES.find((range) => vocalRangeKey(range) === key) || ''
+}
+
+function scoreViewKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/[\s_-]+/g, ' ')
+    .trim()
+}
+
+export function normalizeScoreView(value) {
+  const key = scoreViewKey(value)
+  if (!key) return ''
+  if (['printed', 'print', 'paper', 'hard copy', 'hardcopy'].includes(key)) return 'printed'
+  if (['digital', 'electronic', 'tablet', 'ipad', 'device'].includes(key)) return 'digital'
+  return ''
 }
 
 const TICKET_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
@@ -100,7 +127,7 @@ function getDatabase() {
   return db
 }
 
-export async function registerForWorkshop(eventId, { name, email, vocalRange }) {
+export async function registerForWorkshop(eventId, { name, email, vocalRange, preferredScoreView }) {
   const database = getDatabase()
   const normalizedEmail = email.trim().toLowerCase()
   const normalizedName = name.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -151,6 +178,7 @@ export async function registerForWorkshop(eventId, { name, email, vocalRange }) 
       name: name.trim(),
       email: normalizedEmail,
       vocalRange: vocalRange.trim(),
+      preferredScoreView: normalizeScoreView(preferredScoreView),
       registrationId,
       registrationNumber,
       lookupId,
@@ -197,6 +225,7 @@ export async function importWorkshopRegistrations(eventId, rows, onProgress) {
         name: row.name,
         email: row.email,
         vocalRange: row.vocalRange,
+        preferredScoreView: row.preferredScoreView,
       })
       summary.imported += 1
     } catch (err) {
@@ -232,13 +261,18 @@ export function subscribeToWorkshopRegistrations(eventId, onData, onError) {
   )
 }
 
-export async function updateWorkshopRegistration(eventId, registrationId, { name, vocalRange }) {
+export async function updateWorkshopRegistration(
+  eventId,
+  registrationId,
+  { name, vocalRange, preferredScoreView }
+) {
   const database = getDatabase()
   return updateDoc(
     doc(database, 'schedules', eventId, 'registrations', registrationId),
     {
       name: name.trim(),
       vocalRange: vocalRange.trim(),
+      preferredScoreView: normalizeScoreView(preferredScoreView),
     }
   )
 }

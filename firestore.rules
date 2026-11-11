@@ -22,8 +22,9 @@ service cloud.firestore {
     // at schedules/{eventId}/registrations/{registrationId} and increment
     // registrationCount. Registration ids come from counters/registrations.
     // Duplicate emails are tracked by registrationEmails/{hash}.
-    // Registration fields: name, email, vocalRange, registrationId,
-    // registrationNumber, lookupId, ticketId, eventId, eventTitle, createdAt.
+    // Registration fields: name, email, vocalRange, preferredScoreView
+    // ('printed' | 'digital'), registrationId, registrationNumber, lookupId,
+    // ticketId, eventId, eventTitle, createdAt.
     // Teachers: name, specialty, bio, photoURL, email, profileURL.
     // News: category, title, excerpt, date, readTime, featured.
     // Site content is intentionally public-readable; only admins can write.
@@ -213,12 +214,12 @@ service cloud.firestore {
         && after.get('registrationCount', 0) == before.get('registrationCount', 0) + 1
         && after.get('registrationCount', 0) <= before.get('capacity', 0)
         && hasRequiredFields(data, [
-          'name', 'email', 'vocalRange', 'registrationId', 'registrationNumber',
-          'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'preferredScoreView', 'registrationId',
+          'registrationNumber', 'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && hasOnlyAllowedFields(data, [
-          'name', 'email', 'vocalRange', 'registrationId', 'registrationNumber',
-          'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
+          'name', 'email', 'vocalRange', 'preferredScoreView', 'registrationId',
+          'registrationNumber', 'lookupId', 'ticketId', 'eventId', 'eventTitle', 'createdAt'
         ])
         && data.eventId == eventId
         && data.registrationId == registrationId
@@ -243,6 +244,7 @@ service cloud.firestore {
         && data.email.matches('^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$')
         && isBoundedString(data, 'name', 1, 100)
         && isBoundedString(data, 'vocalRange', 1, 50)
+        && data.preferredScoreView in ['printed', 'digital']
         && data.ticketId is string
         && data.ticketId.size() >= 1
         && data.ticketId.size() <= 150

@@ -4,7 +4,9 @@ import { useContentCollection } from '@/composables/useContentCollection'
 import { useAuthStore } from '@/stores/auth'
 import {
   importWorkshopRegistrations,
+  normalizeScoreView,
   normalizeVocalRange,
+  SCORE_VIEW_OPTIONS,
   subscribeToWorkshopRegistrations,
   updateWorkshopRegistration,
   VOCAL_RANGES,
@@ -27,7 +29,7 @@ const selectedEventId = ref('')
 const page = ref(1)
 const PAGE_SIZE = 8
 const editing = ref(null)
-const form = ref({ name: '', vocalRange: '' })
+const form = ref({ name: '', vocalRange: '', preferredScoreView: '' })
 const formError = ref('')
 const saving = ref(false)
 const ticketDownloadError = ref('')
@@ -103,6 +105,7 @@ const filteredAudiences = computed(() => {
       guest.name,
       guest.email,
       guest.vocalRange,
+      guest.preferredScoreView,
       guest.eventTitle,
       guest.ticketId,
       guest.registrationId,
@@ -269,7 +272,11 @@ async function sendTicketEmail(guest) {
 
 function openEdit(guest) {
   editing.value = guest
-  form.value = { name: guest.name || '', vocalRange: guest.vocalRange || '' }
+  form.value = {
+    name: guest.name || '',
+    vocalRange: guest.vocalRange || '',
+    preferredScoreView: normalizeScoreView(guest.preferredScoreView),
+  }
   formError.value = ''
   notice.value = ''
 }
@@ -385,9 +392,23 @@ async function parseImportFile(file) {
   const vocalRangeIndex = headers.findIndex((header) =>
     ['vocal range', 'vocalrange', 'voice', 'range'].includes(header),
   )
+  const scoreViewIndex = headers.findIndex((header) =>
+    [
+      'preferred score view',
+      'prefered score view',
+      'preferredscoreview',
+      'score view',
+      'scoreview',
+      'score preference',
+      'score format',
+    ].includes(header),
+  )
 
   if (nameIndex === -1 || emailIndex === -1 || vocalRangeIndex === -1) {
     throw new Error('The first row must include "Name", "Vocal Range" and "Email" columns.')
+  }
+  if (scoreViewIndex === -1) {
+    throw new Error('The first row must include a "Preferred Score View" column.')
   }
 
   const validRows = []
@@ -398,11 +419,13 @@ async function parseImportFile(file) {
     const name = String(cells[nameIndex] ?? '').trim()
     const email = String(cells[emailIndex] ?? '').trim().toLowerCase()
     const vocalRangeRaw = String(cells[vocalRangeIndex] ?? '').trim()
+    const scoreViewRaw = String(cells[scoreViewIndex] ?? '').trim()
 
-    if (!name && !email && !vocalRangeRaw) continue
+    if (!name && !email && !vocalRangeRaw && !scoreViewRaw) continue
 
     const rowNumber = index + 1
     const vocalRange = normalizeVocalRange(vocalRangeRaw)
+    const preferredScoreView = normalizeScoreView(scoreViewRaw)
     const problems = []
 
     if (!name) problems.push('name is missing')
@@ -414,10 +437,15 @@ async function parseImportFile(file) {
     if (!vocalRangeRaw) problems.push('vocal range is missing')
     else if (!vocalRange) problems.push(`vocal range "${vocalRangeRaw}" is not recognised`)
 
+    if (!scoreViewRaw) problems.push('preferred score view is missing')
+    else if (!preferredScoreView) {
+      problems.push(`preferred score view "${scoreViewRaw}" is not recognised`)
+    }
+
     if (problems.length) {
       invalidRows.push({ rowNumber, name, email, message: problems.join('; ') })
     } else {
-      validRows.push({ rowNumber, name, email, vocalRange })
+      validRows.push({ rowNumber, name, email, vocalRange, preferredScoreView })
     }
   }
 
@@ -592,6 +620,11 @@ onUnmounted(() => {
                       >{{ guest.vocalRange }}</span
                     >
                     <span
+                      v-if="guest.preferredScoreView"
+                      class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
+                      >{{ guest.preferredScoreView }} score</span
+                    >
+                    <span
                       v-if="guest.registrationId"
                       class="px-2 py-0.5 rounded-full border border-gold-500/20 bg-gold-500/5 text-[10px] font-mono text-gold-300"
                       >#{{ guest.registrationId }}</span
@@ -754,6 +787,23 @@ onUnmounted(() => {
                   <option value="" disabled>Select a vocal range</option>
                   <option v-for="range in VOCAL_RANGES" :key="range" :value="range">
                     {{ range }}
+                  </option>
+                </select>
+              </div>
+
+              <div>
+                <label class="block text-xs font-medium text-bone-400 mb-1.5">Preferred score view</label>
+                <select
+                  v-model="form.preferredScoreView"
+                  class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60"
+                >
+                  <option value="" disabled>Select a preferred score view</option>
+                  <option
+                    v-for="option in SCORE_VIEW_OPTIONS"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
                   </option>
                 </select>
               </div>
@@ -1031,9 +1081,13 @@ onUnmounted(() => {
                   <p class="mt-2 text-xs text-bone-500">
                     The first row must contain the columns
                     <span class="text-bone-300">Name</span>,
-                    <span class="text-bone-300">Vocal Range</span> and
-                    <span class="text-bone-300">Email</span>. Supported vocal ranges:
-                    {{ VOCAL_RANGES.join(', ') }}.
+                    <span class="text-bone-300">Vocal Range</span>,
+                    <span class="text-bone-300">Email</span> and
+                    <span class="text-bone-300">Preferred Score View</span>. Supported vocal ranges:
+                    {{ VOCAL_RANGES.join(', ') }}. Use
+                    <span class="text-bone-300">Printed (will be provided at the venue)</span> or
+                    <span class="text-bone-300">Digital (bring your own iPad / tablet)</span>
+                    for the preferred score view.
                   </p>
                 </div>
 

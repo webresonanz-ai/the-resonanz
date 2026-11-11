@@ -2,7 +2,7 @@
 import { computed, reactive, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useContentCollection } from '@/composables/useContentCollection'
-import { registerForWorkshop, VOCAL_RANGES } from '@/firebase/schedules'
+import { registerForWorkshop, SCORE_VIEW_OPTIONS, VOCAL_RANGES } from '@/firebase/schedules'
 
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -21,8 +21,13 @@ const submitting = ref(false)
 const registrationMessage = ref('')
 const registrationError = ref('')
 const registrationTicket = ref('')
-const registration = reactive({ name: '', vocalRange: '', email: '' })
-const registrationErrors = reactive({ name: '', vocalRange: '', email: '' })
+const registration = reactive({ name: '', vocalRange: '', email: '', preferredScoreView: '' })
+const registrationErrors = reactive({
+  name: '',
+  vocalRange: '',
+  email: '',
+  preferredScoreView: '',
+})
 
 const inputBase =
   'w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 placeholder:text-bone-500 outline-none focus:border-gold-500/60'
@@ -133,9 +138,11 @@ function openEvent(event) {
   registration.name = authStore.user?.displayName || ''
   registration.vocalRange = ''
   registration.email = authStore.user?.email || ''
+  registration.preferredScoreView = ''
   registrationErrors.name = ''
   registrationErrors.vocalRange = ''
   registrationErrors.email = ''
+  registrationErrors.preferredScoreView = ''
   registrationMessage.value = ''
   registrationError.value = ''
   registrationTicket.value = ''
@@ -152,6 +159,7 @@ function validateRegistration() {
   registrationErrors.name = ''
   registrationErrors.vocalRange = ''
   registrationErrors.email = ''
+  registrationErrors.preferredScoreView = ''
 
   if (!registration.name.trim()) registrationErrors.name = 'Name is required.'
   if (!registration.vocalRange) registrationErrors.vocalRange = 'Select your vocal range.'
@@ -159,8 +167,16 @@ function validateRegistration() {
   else if (!/^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(registration.email)) {
     registrationErrors.email = 'Enter a valid email address.'
   }
+  if (!registration.preferredScoreView) {
+    registrationErrors.preferredScoreView = 'Select how you would like to view your score.'
+  }
 
-  return !registrationErrors.name && !registrationErrors.vocalRange && !registrationErrors.email
+  return (
+    !registrationErrors.name
+    && !registrationErrors.vocalRange
+    && !registrationErrors.email
+    && !registrationErrors.preferredScoreView
+  )
 }
 
 async function submitRegistration() {
@@ -185,12 +201,14 @@ async function submitRegistration() {
       name: registration.name,
       email: registration.email,
       vocalRange: registration.vocalRange,
+      preferredScoreView: registration.preferredScoreView,
     })
     registrationTicket.value = result.ticketId
     registrationMessage.value = 'You are registered! We look forward to seeing you.'
     registration.name = ''
     registration.vocalRange = ''
     registration.email = ''
+    registration.preferredScoreView = ''
   } catch (err) {
     registrationError.value = err?.code === 'permission-denied'
       ? 'This email is already registered, or the workshop is full.'
@@ -411,6 +429,15 @@ async function submitRegistration() {
                     <option v-for="range in VOCAL_RANGES" :key="range" :value="range">{{ range }}</option>
                   </select>
                   <p v-if="registrationErrors.vocalRange" class="mt-1.5 text-xs text-rose-400">{{ registrationErrors.vocalRange }}</p>
+                </div>
+
+                <div>
+                  <label for="workshop-score-view" class="block text-xs font-medium text-bone-400 mb-1.5">Preferred Score View</label>
+                  <select id="workshop-score-view" v-model="registration.preferredScoreView" :class="[inputBase, registrationErrors.preferredScoreView ? 'border-rose-700/60' : '']">
+                    <option value="" disabled>Select your preferred score view</option>
+                    <option v-for="option in SCORE_VIEW_OPTIONS" :key="option.value" :value="option.value">{{ option.label }}</option>
+                  </select>
+                  <p v-if="registrationErrors.preferredScoreView" class="mt-1.5 text-xs text-rose-400">{{ registrationErrors.preferredScoreView }}</p>
                 </div>
 
                 <div>
