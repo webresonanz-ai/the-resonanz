@@ -398,7 +398,8 @@ service cloud.firestore {
     }
 
     match /counters/{counterId} {
-      allow read: if true;
+      // Document get only (used by the registration transaction) — no listing.
+      allow get: if true;
       allow create: if counterId == 'registrations'
         && request.resource.data.keys().hasOnly(['count'])
         && request.resource.data.count is int
@@ -442,7 +443,8 @@ service cloud.firestore {
     }
 
     match /registrationEmails/{lookupId} {
-      allow read: if true;
+      // Document get only (duplicate check) — prevents listing/enumerating hashes.
+      allow get: if true;
       allow create: if hasRequiredFields(request.resource.data, [
           'eventId', 'registrationId', 'createdAt'
         ])
