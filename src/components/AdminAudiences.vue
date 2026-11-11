@@ -9,7 +9,8 @@ import {
   updateWorkshopRegistration,
   VOCAL_RANGES,
 } from '@/firebase/schedules'
-import { fetchDriveFile } from '@/firebase/drive'
+import { generateTicketPdf } from '@/firebase/tickets'
+import { sendAudienceConfirmationEmail } from '@/firebase/email'
 
 const authStore = useAuthStore()
 const {
@@ -31,6 +32,8 @@ const formError = ref('')
 const saving = ref(false)
 const ticketDownloadError = ref('')
 const downloadingTicketId = ref('')
+const sendingEmailId = ref('')
+const emailError = ref('')
 const registrationUnsubs = new Map()
 const importOpen = ref(false)
 const importStep = ref(1)
@@ -85,6 +88,7 @@ const audiences = computed(() =>
       eventId: event.id,
       eventTitle: event.title,
       eventDate: event.date,
+      eventType: event.type,
       ticketDesignURL: event.ticketDesignURL || '',
     })),
   ),
@@ -208,23 +212,8 @@ function initials(guest) {
   return base.slice(0, 2).toUpperCase()
 }
 
-function ticketGuestName(name) {
-  const value = String(name || '')
-    .trim()
-    .replace(/\s+/g, ' ')
-  if (!value) return 'Guest'
-  if (value.length <= 25) return value
-
-  const clipped = value.slice(0, 25)
-  if (value[25] === ' ') return clipped
-
-  const lastSpace = clipped.lastIndexOf(' ')
-  return (lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped).trim() || 'Guest'
-}
-
-function ticketFilename(guest) {
-  const base = `${guest.eventTitle || 'workshop'}-${guest.name || 'guest'}-${guest.ticketId || ''}`
-  return `${base.replace(/[<>:"/\\|?*]/g, '-').replace(/\s+/g, '-').slice(0, 150)}.pdf`
+function guestKey(guest) {
+  return `${guest.eventId}-${guest.registrationId || guest.id}`
 }
 
 async function downloadTicket(guest) {
@@ -238,90 +227,43 @@ async function downloadTicket(guest) {
     return
   }
 
-  downloadingTicketId.value = `${guest.eventId}-${guest.registrationId || guest.id}`
+  downloadingTicketId.value = guestKey(guest)
   try {
-    const [designBlob, { PDFDocument, rgb, StandardFonts }, QRCode] = await Promise.all([
-      fetchDriveFile(guest.ticketDesignURL),
-      import('pdf-lib'),
-      import('qrcode'),
-    ])
-    const pdf = await PDFDocument.load(await designBlob.arrayBuffer())
-    const pages = pdf.getPages()
-    if (!pages.length) throw new Error('The ticket design PDF has no pages.')
-    for (let index = pages.length - 1; index > 0; index -= 1) pdf.removePage(index)
-
-    const page = pdf.getPages()[0]
-    const { width, height } = page.getSize()
-    const margin = width * 0.06
-    const contentWidth = width * 0.8
-    const contentCenterX = width / 2
-    const nameSize = height * 0.025
-    const nameLineHeight = height * 0.04
-    const vocalRangeSize = height * 0.02
-    const boldFont = await pdf.embedFont(StandardFonts.HelveticaBold)
-    const qrCodeDataUrl = await QRCode.toDataURL(guest.ticketId, {
-      errorCorrectionLevel: 'H',
-      margin: 1,
-      width: 400,
-    })
-    const qrCodeBytes = Uint8Array.from(
-      atob(qrCodeDataUrl.split(',')[1]),
-      (character) => character.charCodeAt(0),
-    )
-    const qrCode = await pdf.embedPng(qrCodeBytes)
-
-    const nameLines = []
-    let currentLine = ''
-    for (const word of ticketGuestName(guest.name).split(/\s+/)) {
-      const candidate = currentLine ? `${currentLine} ${word}` : word
-      if (currentLine && boldFont.widthOfTextAtSize(candidate, nameSize) > contentWidth) {
-        nameLines.push(currentLine)
-        currentLine = word
-      } else {
-        currentLine = candidate
-      }
-    }
-    if (currentLine) nameLines.push(currentLine)
-
-    let textY = height - margin - nameSize - 455
-    for (const line of nameLines) {
-      const lineWidth = boldFont.widthOfTextAtSize(line, nameSize)
-      page.drawText(line, {
-        x: contentCenterX - lineWidth / 2,
-        y: textY,
-        size: nameSize,
-        font: boldFont,
-        color: rgb(0, 0, 0),
-      })
-      textY -= nameLineHeight
-    }
-
-    textY -= height * 0.025
-    const vocalRange = guest.vocalRange || 'Not specified'
-    page.drawText(vocalRange, {
-      x: contentCenterX - boldFont.widthOfTextAtSize(vocalRange, vocalRangeSize) / 2,
-      y: textY,
-      size: vocalRangeSize,
-      font: boldFont,
-      color: rgb(0, 0, 0),
-    })
-
-    const qrSize = Math.min(width * 0.20, height * 0.15)
-    const qrX = contentCenterX - qrSize / 2
-    const qrY = textY - height * 0.045 - qrSize
-    page.drawImage(qrCode, { x: qrX, y: qrY, width: qrSize, height: qrSize })
-
-    const output = await pdf.save()
-    const objectUrl = URL.createObjectURL(new Blob([output], { type: 'application/pdf' }))
+    const { bytes, filename } = await generateTicketPdf(guest)
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = objectUrl
-    link.download = ticketFilename(guest)
+    link.download = filename
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
   } catch (err) {
     ticketDownloadError.value = err.message || 'Unable to generate this ticket PDF.'
   } finally {
     downloadingTicketId.value = ''
+  }
+}
+
+async function sendTicketEmail(guest) {
+  emailError.value = ''
+  notice.value = ''
+  if (!guest.email) {
+    emailError.value = `No email address is available for ${guest.name || 'this guest'}.`
+    return
+  }
+
+  sendingEmailId.value = guestKey(guest)
+  try {
+    const { bytes } = await generateTicketPdf(guest)
+    const result = await sendAudienceConfirmationEmail({
+      eventId: guest.eventId,
+      registrationId: guest.registrationId || guest.id,
+      pdfBytes: bytes,
+    })
+    notice.value = `Confirmation email sent to ${result?.recipient || guest.email}.`
+  } catch (err) {
+    emailError.value = err.message || 'Unable to send the confirmation email.'
+  } finally {
+    sendingEmailId.value = ''
   }
 }
 
@@ -555,6 +497,13 @@ onUnmounted(() => {
     >
       {{ ticketDownloadError }}
     </div>
+    <div
+      v-if="emailError"
+      role="alert"
+      class="rounded-xl border border-rose-700/50 bg-rose-950/30 p-3 sm:p-4 text-sm text-rose-200"
+    >
+      {{ emailError }}
+    </div>
 
     <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
       <div
@@ -686,17 +635,23 @@ onUnmounted(() => {
               </div>
               <div class="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
                 <button
+                  v-if="authStore.isAdmin"
                   type="button"
-                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId)"
+                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
+                  :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Send confirmation email with ticket PDF'"
+                  class="flex-1 rounded-lg border border-gold-500/30 px-3 py-1.5 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
+                  @click="sendTicketEmail(guest)"
+                >
+                  {{ sendingEmailId === guestKey(guest) ? 'Sending…' : 'Send email' }}
+                </button>
+                <button
+                  type="button"
+                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
                   :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
                   class="flex-1 rounded-lg border border-gold-500/30 px-3 py-1.5 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
                   @click="downloadTicket(guest)"
                 >
-                  {{
-                    downloadingTicketId === `${guest.eventId}-${guest.registrationId || guest.id}`
-                      ? 'Generating…'
-                      : 'Download ticket PDF'
-                  }}
+                  {{ downloadingTicketId === guestKey(guest) ? 'Generating…' : 'Download ticket PDF' }}
                 </button>
                 <button
                   type="button"
