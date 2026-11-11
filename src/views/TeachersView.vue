@@ -1,5 +1,7 @@
 <script setup>
+import { reactive } from 'vue'
 import { useContentCollection } from '@/composables/useContentCollection'
+import { toDriveImageUrl } from '@/firebase/drive'
 
 const hues = [
   'from-gold-400 to-maroon-600',
@@ -10,6 +12,22 @@ const hues = [
   'from-maroon-500 to-gold-600',
 ]
 const { items: teachers, loading, error } = useContentCollection('teachers', 'name', 'asc')
+
+const BIO_PREVIEW_LENGTH = 220
+const expandedBios = reactive(new Set())
+
+function isLongBio(bio) {
+  return String(bio || '').length > BIO_PREVIEW_LENGTH
+}
+
+function bioPreview(bio) {
+  return `${String(bio).slice(0, BIO_PREVIEW_LENGTH).trimEnd()}…`
+}
+
+function toggleBio(id) {
+  if (expandedBios.has(id)) expandedBios.delete(id)
+  else expandedBios.add(id)
+}
 
 function initials(name) {
   return name
@@ -47,8 +65,9 @@ function initials(name) {
           <div class="absolute inset-0 rounded-full bg-gradient-to-br from-gold-400 to-maroon-600 blur-md opacity-50 group-hover:opacity-80 transition-opacity duration-500"></div>
           <img
             v-if="teacher.photoURL"
-            :src="teacher.photoURL"
+            :src="toDriveImageUrl(teacher.photoURL)"
             :alt="teacher.name"
+            referrerpolicy="no-referrer"
             class="relative w-20 h-20 sm:w-24 sm:h-24 rounded-full object-cover ring-2 ring-gold-500/30 group-hover:ring-gold-400/60 transition-all duration-500"
           />
           <div
@@ -60,7 +79,18 @@ function initials(name) {
 
         <h3 class="text-lg sm:text-xl font-serif text-bone-100 group-hover:text-gold-300 transition-colors">{{ teacher.name }}</h3>
         <p class="text-gold-400 text-[11px] sm:text-sm mt-1 uppercase tracking-wider">{{ teacher.specialty }}</p>
-        <p class="text-bone-500 text-[13px] sm:text-sm mt-2 sm:mt-3 leading-relaxed">{{ teacher.bio }}</p>
+        <p class="text-bone-500 text-[13px] sm:text-sm mt-2 sm:mt-3 leading-relaxed">
+          {{ isLongBio(teacher.bio) && !expandedBios.has(teacher.id) ? bioPreview(teacher.bio) : teacher.bio }}
+        </p>
+        <button
+          v-if="isLongBio(teacher.bio)"
+          type="button"
+          :aria-expanded="expandedBios.has(teacher.id)"
+          class="mt-1.5 text-[11px] sm:text-xs font-medium text-gold-400 hover:text-gold-300 transition-colors"
+          @click="toggleBio(teacher.id)"
+        >
+          {{ expandedBios.has(teacher.id) ? 'See less' : 'See more…' }}
+        </button>
         <div v-if="teacher.email || teacher.profileURL" class="mt-4 sm:mt-5 flex items-center justify-center gap-3">
           <a
             v-if="teacher.email"

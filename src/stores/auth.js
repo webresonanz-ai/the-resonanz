@@ -8,7 +8,8 @@ import {
   updateProfile,
   onAuthStateChanged,
 } from 'firebase/auth'
-import { auth, googleProvider, isFirebaseConfigured } from '@/firebase/config'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { auth, db, googleProvider, isFirebaseConfigured } from '@/firebase/config'
 import { claimUserSession, ensureUserProfile, getUserProfile, releaseUserSession } from '@/firebase/users'
 
 /* ---- helpers ---- */
@@ -57,6 +58,24 @@ export const useAuthStore = defineStore('auth', () => {
   const initialized = ref(false)
 
   let initPromise = null
+  let profileUnsubscribe = null
+
+  /** Keep the signed-in user's role in sync when an admin changes it. */
+  function syncProfileRole(uid) {
+    profileUnsubscribe?.()
+    profileUnsubscribe = null
+    if (!isFirebaseConfigured || !db || !uid) return
+
+    profileUnsubscribe = onSnapshot(
+      doc(db, 'users', uid),
+      (snap) => {
+        if (!snap.exists() || !user.value || user.value.uid !== uid) return
+        const role = snap.data().role
+        if (role && role !== user.value.role) user.value = { ...user.value, role }
+      },
+      (err) => console.warn('Failed to watch user profile role:', err),
+    )
+  }
 
   const isAuthenticated = computed(() => !!user.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
@@ -98,6 +117,7 @@ export const useAuthStore = defineStore('auth', () => {
             if (profile && !(await claimUserSession(u))) {
               await signOut(auth)
               user.value = null
+              syncProfileRole(null)
               error.value = authErrorMessages['session/device-in-use']
               if (!initialized.value) {
                 initialized.value = true
@@ -109,6 +129,7 @@ export const useAuthStore = defineStore('auth', () => {
             console.warn('Failed to load user profile from Firestore:', err)
             await signOut(auth)
             user.value = null
+            syncProfileRole(null)
             error.value = 'Unable to verify this account session. Please try again.'
             if (!initialized.value) {
               initialized.value = true
@@ -118,6 +139,7 @@ export const useAuthStore = defineStore('auth', () => {
           }
         }
         user.value = u ? { ...mapUser(u), role: profile?.role || 'guest' } : null
+        syncProfileRole(u?.uid)
         if (!initialized.value) {
           initialized.value = true
           resolve()
@@ -147,6 +169,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw { code: 'session/device-in-use' }
       }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
+      syncProfileRole(cred.user.uid)
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -173,6 +196,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw { code: 'session/device-in-use' }
       }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
+      syncProfileRole(cred.user.uid)
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -198,6 +222,7 @@ export const useAuthStore = defineStore('auth', () => {
         throw { code: 'session/device-in-use' }
       }
       user.value = { ...mapUser(cred.user), role: profile?.role || 'guest' }
+      syncProfileRole(cred.user.uid)
       return true
     } catch (err) {
       error.value = friendlyError(err)
@@ -214,6 +239,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     if (auth.currentUser) await releaseUserSession(auth.currentUser)
     await signOut(auth)
+    syncProfileRole(null)
     user.value = null
   }
 

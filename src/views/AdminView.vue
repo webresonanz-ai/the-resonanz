@@ -12,8 +12,10 @@ import {
   preloadGoogleIdentityServices,
   uploadBannerToDrive,
   uploadTicketDesignToDrive,
+  uploadTeacherPhotoToDrive,
   ensureDriveAccessToken,
   hasValidAccessToken,
+  toDriveImageUrl,
 } from '@/firebase/drive'
 
 const schemas = {
@@ -66,7 +68,7 @@ const schemas = {
     fields: [
       { key: 'name', label: 'Name', type: 'text', required: true, maxlength: 100 },
       { key: 'specialty', label: 'Specialty', type: 'text', required: true, maxlength: 100 },
-      { key: 'bio', label: 'Biography', type: 'textarea', required: true, maxlength: 500 },
+      { key: 'bio', label: 'Biography', type: 'textarea', required: true, rows: 8 },
       { key: 'photoURL', label: 'Photo URL (optional)', type: 'url', maxlength: 500 },
       { key: 'email', label: 'Email (optional)', type: 'email', maxlength: 254 },
       { key: 'profileURL', label: 'Profile URL (optional)', type: 'url', maxlength: 500 },
@@ -95,8 +97,10 @@ const form = ref({})
 const scheduleModalOpen = ref(false)
 const bannerFileInput = ref(null)
 const ticketDesignFileInput = ref(null)
+const teacherPhotoFileInput = ref(null)
 const uploadingBanner = ref(false)
 const uploadingTicketDesign = ref(false)
+const uploadingTeacherPhoto = ref(false)
 const driveReady = ref(false)
 const driveFailed = ref(false)
 const driveConnected = ref(false)
@@ -236,6 +240,10 @@ function triggerTicketDesignUpload() {
   return triggerDriveUpload(ticketDesignFileInput)
 }
 
+function triggerTeacherPhotoUpload() {
+  return triggerDriveUpload(teacherPhotoFileInput)
+}
+
 function ticketDesignPreviewURL(value) {
   try {
     const url = new URL(value)
@@ -282,6 +290,25 @@ async function handleTicketDesignFile(event) {
     if (!hasValidAccessToken()) driveConnected.value = false
   } finally {
     uploadingTicketDesign.value = false
+  }
+}
+
+async function handleTeacherPhotoFile(event) {
+  const file = event.target.files?.[0]
+  event.target.value = ''
+  if (!file) return
+
+  uploadingTeacherPhoto.value = true
+  error.value = ''
+  notice.value = ''
+  try {
+    form.value.photoURL = await uploadTeacherPhotoToDrive(file)
+    notice.value = 'Teacher photo uploaded to Google Drive.'
+  } catch (err) {
+    error.value = err.message || 'Unable to upload the teacher photo.'
+    if (!hasValidAccessToken()) driveConnected.value = false
+  } finally {
+    uploadingTeacherPhoto.value = false
   }
 }
 
@@ -498,7 +525,14 @@ onUnmounted(() => unsubscribe?.())
       <section v-if="activeCollection !== 'schedules'" class="rounded-2xl border border-maroon-700/60 glass-card p-4 sm:p-6">
         <h2 class="text-base sm:text-lg font-serif text-bone-100 mb-4 sm:mb-5">{{ editingId ? 'Edit record' : 'Create record' }}</h2>
         <form class="space-y-4" @submit.prevent="saveRecord">
+          <input ref="teacherPhotoFileInput" type="file" accept="image/*" class="hidden" @change="handleTeacherPhotoFile" />
           <div v-for="field in visibleFields" :key="field.key">
+            <div v-if="activeCollection === 'teachers' && field.key === 'photoURL' && form.photoURL" class="relative mb-2 overflow-hidden rounded-lg border border-maroon-700/60">
+              <img :src="toDriveImageUrl(form.photoURL)" alt="Teacher photo preview" referrerpolicy="no-referrer" class="w-full h-32 sm:h-44 object-cover" />
+              <button type="button" class="absolute top-2 right-2 px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur text-xs text-bone-200 hover:bg-rose-900/80 transition-colors" @click="form.photoURL = ''">
+                Remove
+              </button>
+            </div>
             <label :for="`admin-${field.key}`" class="block text-[11px] sm:text-xs font-medium text-bone-400 mb-1.5">{{ field.label }}</label>
             <input
               v-if="field.type !== 'select' && field.type !== 'textarea' && field.type !== 'checkbox'"
@@ -528,13 +562,22 @@ onUnmounted(() => unsubscribe?.())
               v-model="form[field.key]"
               :required="field.required"
               :maxlength="field.maxlength"
-              rows="4"
+              :rows="field.rows || 4"
               class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60 resize-y"
             ></textarea>
             <label v-else class="flex items-center gap-3 rounded-lg border border-maroon-700/60 bg-maroon-950/40 px-3 py-3 text-sm text-bone-300">
               <input :id="`admin-${field.key}`" v-model="form[field.key]" type="checkbox" class="accent-yellow-500" />
               {{ field.label }}
             </label>
+            <div v-if="activeCollection === 'teachers' && field.key === 'photoURL'" class="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                :disabled="uploadingTeacherPhoto || !driveReady"
+                class="px-3 py-1.5 rounded-lg border border-gold-500/40 text-xs font-medium text-gold-300 hover:bg-gold-500/10 transition-colors disabled:opacity-60"
+                @click="triggerTeacherPhotoUpload"
+              >{{ uploadingTeacherPhoto ? 'Uploading…' : !driveReady ? (driveFailed ? 'Google Drive unavailable' : 'Loading Google…') : driveConnected ? 'Upload photo to Google Drive' : 'Connect Google Drive' }}</button>
+              <span class="text-xs text-bone-500">or paste an image URL above</span>
+            </div>
           </div>
 
           <div class="flex gap-3 pt-2">

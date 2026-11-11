@@ -278,7 +278,8 @@ service cloud.firestore {
         ])
         && isBoundedString(data, 'name', 1, 100)
         && isBoundedString(data, 'specialty', 1, 100)
-        && isBoundedString(data, 'bio', 1, 500)
+        && data.bio is string
+        && data.bio.size() >= 1
         && isValidUrl(data.photoURL)
         && isValidEmail(data.email)
         && isValidUrl(data.profileURL)
@@ -313,8 +314,20 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time;
     }
 
+    // Admins may promote/demote other users, but never their own account so
+    // the last admin cannot accidentally lock themselves out.
+    function isAdminRoleChange(userId) {
+      return isAdmin()
+        && userId != request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'role', 'updatedAt'
+        ])
+        && request.resource.data.role in ['guest', 'scanner', 'admin']
+        && request.resource.data.updatedAt == request.time;
+    }
+
     match /users/{userId} {
-      allow read: if isOwner(userId);
+      allow read: if isOwner(userId) || isAdmin();
 
       allow create: if isOwner(userId)
         && uidUnchanged()
@@ -325,28 +338,31 @@ service cloud.firestore {
         && request.resource.data.updatedAt == request.time
         && request.resource.data.lastLoginAt == request.time;
 
-      allow update: if isOwner(userId)
-        && uidNotModified()
-        && isValidUser(request.resource.data)
-        && request.resource.data.uid == resource.data.uid
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.displayName == resource.data.displayName
-        && request.resource.data.photoURL == resource.data.photoURL
-        && request.resource.data.provider == resource.data.provider
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastLoginAt == request.time
-        && (
-          request.resource.data.activeDeviceId == resource.data.get('activeDeviceId', null)
-          || (resource.data.get('activeDeviceId', null) == null
-            && request.resource.data.activeDeviceId is string)
-          || (request.resource.data.activeDeviceId == null
-            && resource.data.get('activeDeviceId', null) is string)
-        )
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'updatedAt', 'lastLoginAt', 'activeDeviceId'
-        ]);
+      allow update: if (isOwner(userId)
+          && uidNotModified()
+          && isValidUser(request.resource.data)
+          && request.resource.data.uid == resource.data.uid
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.displayName == resource.data.displayName
+          && request.resource.data.photoURL == resource.data.photoURL
+          && request.resource.data.provider == resource.data.provider
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.lastLoginAt == request.time
+          && (
+            request.resource.data.activeDeviceId == resource.data.get('activeDeviceId', null)
+            || (resource.data.get('activeDeviceId', null) == null
+              && request.resource.data.activeDeviceId is string)
+            || (request.resource.data.activeDeviceId == null
+              && resource.data.get('activeDeviceId', null) is string)
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'updatedAt', 'lastLoginAt', 'activeDeviceId'
+          ]))
+        || (isAdminRoleChange(userId)
+          && uidNotModified()
+          && isValidUser(request.resource.data));
 
       allow delete: if false;
     }

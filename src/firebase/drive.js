@@ -8,6 +8,7 @@ const GIS_SRC = 'https://accounts.google.com/gsi/client'
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID
 const FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_BANNER_EVENT_FOLDER_ID
 const TICKET_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_TICKET_FOLDER_ID
+const TEACHER_PHOTO_FOLDER_ID = import.meta.env.VITE_GOOGLE_DRIVE_TEACHER_PHOTOS_FOLDER_ID
 
 let gisPromise = null
 let tokenCache = { token: '', expiresAt: 0 }
@@ -91,6 +92,35 @@ async function getAccessToken() {
   return tokenCache.token
 }
 
+function extractDriveFileId(value) {
+  try {
+    const url = new URL(value)
+    if (url.hostname === 'drive.google.com' || url.hostname === 'docs.google.com') {
+      return url.searchParams.get('id') || url.pathname.match(/\/file\/d\/([^/]+)/)?.[1] || null
+    }
+    if (/^lh\d\.googleusercontent\.com$/.test(url.hostname)) {
+      return url.pathname.match(/^\/d\/([^=/]+)/)?.[1] || null
+    }
+  } catch {
+    return null
+  }
+  return null
+}
+
+/**
+ * Turn any Google Drive link (share link, thumbnail URL or lh3 URL) into a
+ * URL that renders directly inside an <img>. Drive's thumbnail endpoint is
+ * frequently blocked with a 403 when hot-linked, while the googleusercontent
+ * CDN serves the public file bytes directly.
+ */
+export function toDriveImageUrl(value, size = 1600) {
+  const url = String(value || '').trim()
+  if (!url) return ''
+  const fileId = extractDriveFileId(url)
+  if (!fileId) return url
+  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(fileId)}=w${size}`
+}
+
 function buildMultipartBody(file, metadata) {
   const boundary = `resonanz_${Date.now()}_${Math.random().toString(36).slice(2)}`
   const delimiter = `--${boundary}\r\n`
@@ -170,7 +200,7 @@ async function uploadFileToDrive(file, folderId, namePrefix, fileType) {
   if (fileType === 'application/pdf') {
     return `https://drive.google.com/file/d/${uploadData.id}/view`
   }
-  return `https://drive.google.com/thumbnail?id=${uploadData.id}&sz=w1600`
+  return `https://lh3.googleusercontent.com/d/${encodeURIComponent(uploadData.id)}=w1600`
 }
 
 export async function uploadBannerToDrive(file) {
@@ -182,6 +212,13 @@ export async function uploadTicketDesignToDrive(file) {
     throw new Error('Google Drive ticket folder is not configured. Add VITE_GOOGLE_DRIVE_TICKET_FOLDER_ID to the .env file.')
   }
   return uploadFileToDrive(file, TICKET_FOLDER_ID, 'workshop-ticket-design', 'application/pdf')
+}
+
+export async function uploadTeacherPhotoToDrive(file) {
+  if (!TEACHER_PHOTO_FOLDER_ID) {
+    throw new Error('Google Drive teacher photo folder is not configured. Add VITE_GOOGLE_DRIVE_TEACHER_PHOTOS_FOLDER_ID to the .env file.')
+  }
+  return uploadFileToDrive(file, TEACHER_PHOTO_FOLDER_ID, 'teacher-photo', 'image')
 }
 
 export async function fetchDriveFile(fileUrl) {

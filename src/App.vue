@@ -22,12 +22,31 @@ const showText = computed(() =>
   isDesktop.value ? !collapsed.value : mobileOpen.value
 )
 
+// Hover/focus tooltip for the icon-only collapsed sidebar.
+const navTooltip = ref(null)
+
+const showNavTooltip = (item, event) => {
+  if (showText.value) return
+  const rect = event.currentTarget.getBoundingClientRect()
+  navTooltip.value = {
+    name: item.name,
+    top: rect.top + rect.height / 2,
+    left: rect.right + 10,
+  }
+}
+
+const hideNavTooltip = () => {
+  navTooltip.value = null
+}
+
 const toggleSidebar = () => {
+  navTooltip.value = null
   if (isDesktop.value) collapsed.value = !collapsed.value
   else mobileOpen.value = !mobileOpen.value
 }
 
 const closeMobile = () => {
+  navTooltip.value = null
   mobileOpen.value = false
 }
 
@@ -90,6 +109,12 @@ const navigation = [
     icon: 'M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z',
   },
   {
+    name: 'Users',
+    path: '/users',
+    adminOnly: true,
+    icon: 'M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z',
+  },
+  {
     name: 'Audiences',
     path: '/audiences',
     scannerOnly: true,
@@ -107,7 +132,7 @@ const navigation = [
     icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
   },
 ]
-const navigationOrder = ['Dashboard', 'Courses & Fee', 'Schedules', 'Teachers', 'News', 'Contact', 'Admin', 'Audiences', 'Scan QR Code']
+const navigationOrder = ['Dashboard', 'Courses & Fee', 'Schedules', 'Teachers', 'News', 'Contact', 'Admin', 'Users', 'Audiences', 'Scan QR Code']
 const visibleNavigation = computed(() =>
   navigation
     .filter((item) => navigationOrder.includes(item.name) && (!item.adminOnly || authStore.isAdmin) && (!item.scannerOnly || authStore.isScanner))
@@ -193,12 +218,16 @@ const visibleNavigation = computed(() =>
       </div>
 
       <!-- Nav -->
-      <nav class="flex-1 py-4 lg:py-6 space-y-1 px-2.5 lg:px-3 overflow-y-auto overflow-x-hidden">
+      <nav class="flex-1 py-4 lg:py-6 space-y-1 px-2.5 lg:px-3 overflow-y-auto overflow-x-hidden" @scroll="hideNavTooltip">
         <RouterLink
           v-for="(item, index) in visibleNavigation"
           :key="item.name"
           :to="item.path"
           @click="closeMobile"
+          @mouseenter="showNavTooltip(item, $event)"
+          @mouseleave="hideNavTooltip"
+          @focus="showNavTooltip(item, $event)"
+          @blur="hideNavTooltip"
           class="nav-item group relative flex items-center px-3 py-2.5 rounded-xl text-bone-400 hover:text-gold-300 transition-all duration-300 animate-fade-in-up"
           exact-active-class="nav-active"
           :style="{ animationDelay: `${index * 70}ms` }"
@@ -258,7 +287,6 @@ const visibleNavigation = computed(() =>
       >
         <svg
           class="w-5 h-5 transition-transform duration-300 group-hover:scale-110"
-          :class="(collapsed && isDesktop) ? 'rotate-180' : ''"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -350,6 +378,19 @@ const visibleNavigation = computed(() =>
         </RouterView>
       </div>
     </main>
+
+    <Teleport to="body">
+      <Transition name="fade">
+        <div
+          v-if="navTooltip"
+          role="tooltip"
+          class="pointer-events-none fixed z-[70] -translate-y-1/2 whitespace-nowrap rounded-lg border border-maroon-700/60 bg-maroon-900/95 px-2.5 py-1.5 text-xs font-medium text-bone-200 shadow-lg shadow-black/50 backdrop-blur"
+          :style="{ top: `${navTooltip.top}px`, left: `${navTooltip.left}px` }"
+        >
+          {{ navTooltip.name }}
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 

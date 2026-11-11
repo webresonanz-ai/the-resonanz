@@ -3,10 +3,62 @@
 // Stores each authenticated user under `users/{uid}`.
 // New users always start with the `guest` role.
 // ============================================================
-import { doc, getDoc, setDoc, serverTimestamp, runTransaction } from 'firebase/firestore'
+import {
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  runTransaction,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore'
 import { db, isFirebaseConfigured } from './config'
 
 export const DEFAULT_ROLE = 'guest'
+
+export const USER_ROLES = ['guest', 'scanner', 'admin']
+
+export const ROLE_DESCRIPTIONS = {
+  guest: 'Read-only access to the academy dashboard.',
+  scanner: 'Can scan tickets and manage workshop audiences.',
+  admin: 'Full access to content, users, and check-in.',
+}
+
+function getDatabase() {
+  if (!isFirebaseConfigured || !db) {
+    throw new Error(
+      'Firebase is not configured. Add your credentials to the .env file and restart the dev server.',
+    )
+  }
+  return db
+}
+
+/** Live list of every user profile. Only admins may read the collection. */
+export function subscribeToUsers(onData, onError) {
+  const database = getDatabase()
+  return onSnapshot(
+    collection(database, 'users'),
+    (snapshot) =>
+      onData(
+        snapshot.docs
+          .map((item) => ({ id: item.id, ...item.data() }))
+          .sort((a, b) => String(a.email || '').localeCompare(String(b.email || ''))),
+      ),
+    onError,
+  )
+}
+
+/** Promote or demote a user. Admins cannot change their own role. */
+export async function updateUserRole(uid, role) {
+  if (!uid) throw new Error('A user id is required.')
+  if (!USER_ROLES.includes(role)) throw new Error('Unknown role.')
+
+  return updateDoc(doc(getDatabase(), 'users', uid), {
+    role,
+    updatedAt: serverTimestamp(),
+  })
+}
 
 const DEVICE_ID_KEY = 'resonanz.deviceId'
 
