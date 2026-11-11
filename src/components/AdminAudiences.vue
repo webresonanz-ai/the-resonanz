@@ -26,6 +26,8 @@ const registrationError = ref('')
 const notice = ref('')
 const search = ref('')
 const selectedEventId = ref('')
+const scoreViewFilter = ref('')
+const checkInFilter = ref('')
 const page = ref(1)
 const PAGE_SIZE = 8
 const editing = ref(null)
@@ -100,6 +102,9 @@ const filteredAudiences = computed(() => {
   const term = search.value.trim().toLowerCase()
   return audiences.value.filter((guest) => {
     if (selectedEventId.value && guest.eventId !== selectedEventId.value) return false
+    if (scoreViewFilter.value && guest.preferredScoreView !== scoreViewFilter.value) return false
+    if (checkInFilter.value === 'checked' && !guest.checkedIn) return false
+    if (checkInFilter.value === 'not-checked' && guest.checkedIn) return false
     if (!term) return true
     return [
       guest.name,
@@ -116,6 +121,31 @@ const filteredAudiences = computed(() => {
     )
   })
 })
+
+const hasFilters = computed(() =>
+  Boolean(search.value || selectedEventId.value || scoreViewFilter.value || checkInFilter.value),
+)
+
+const selectedEventName = computed(
+  () => workshopEvents.value.find((event) => event.id === selectedEventId.value)?.title || '',
+)
+
+const scoreViewFilterLabel = computed(
+  () =>
+    SCORE_VIEW_OPTIONS.find((option) => option.value === scoreViewFilter.value)?.label.split(' (')[0]
+    || '',
+)
+
+const checkInFilterLabel = computed(
+  () => ({ checked: 'Checked in', 'not-checked': 'Not checked in' })[checkInFilter.value] || '',
+)
+
+function clearFilters() {
+  search.value = ''
+  selectedEventId.value = ''
+  scoreViewFilter.value = ''
+  checkInFilter.value = ''
+}
 
 const pageCount = computed(() =>
   Math.max(1, Math.ceil(filteredAudiences.value.length / PAGE_SIZE)),
@@ -134,7 +164,7 @@ const pageEnd = computed(() =>
   Math.min(page.value * PAGE_SIZE, filteredAudiences.value.length),
 )
 
-watch([search, selectedEventId], () => {
+watch([search, selectedEventId, scoreViewFilter, checkInFilter], () => {
   page.value = 1
 })
 
@@ -220,6 +250,7 @@ function guestKey(guest) {
 }
 
 async function downloadTicket(guest) {
+  if (!authStore.isAdmin) return
   ticketDownloadError.value = ''
   if (!guest.ticketDesignURL) {
     ticketDownloadError.value = `Upload a ticket design for "${guest.eventTitle}" before downloading tickets.`
@@ -247,6 +278,7 @@ async function downloadTicket(guest) {
 }
 
 async function sendTicketEmail(guest) {
+  if (!authStore.isAdmin) return
   emailError.value = ''
   notice.value = ''
   if (!guest.email) {
@@ -271,6 +303,7 @@ async function sendTicketEmail(guest) {
 }
 
 function openEdit(guest) {
+  if (!authStore.isAdmin) return
   editing.value = guest
   form.value = {
     name: guest.name || '',
@@ -287,7 +320,7 @@ function closeEdit() {
 }
 
 async function saveGuest() {
-  if (!editing.value) return
+  if (!authStore.isAdmin || !editing.value) return
   formError.value = ''
 
   if (!form.value.name.trim()) {
@@ -535,15 +568,23 @@ onUnmounted(() => {
 
     <section class="rounded-2xl border border-maroon-700/60 glass-card overflow-hidden">
       <div
-        class="flex flex-col gap-3 sm:gap-4 p-4 sm:p-5 border-b border-maroon-700/50 lg:flex-row lg:items-center lg:justify-between"
+        class="flex flex-col gap-3 border-b border-maroon-700/50 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5"
       >
-        <div>
-          <h2 class="text-base sm:text-lg font-serif text-bone-100">Workshop audiences</h2>
-          <p class="text-xs text-bone-500 mt-1">
-            <template v-if="search || selectedEventId">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2.5">
+            <h2 class="text-base font-serif text-bone-100 sm:text-lg">Workshop audiences</h2>
+            <span
+              class="inline-flex items-center gap-1 rounded-full border border-gold-500/25 bg-gold-500/10 px-2 py-0.5 text-[10px] font-medium text-gold-300"
+            >
+              {{ filteredAudiences.length }}
+            </span>
+          </div>
+          <p class="mt-1 text-xs text-bone-500">
+            <template v-if="hasFilters">
               {{ filteredAudiences.length }} of {{ audiences.length }} guest{{
                 audiences.length === 1 ? '' : 's'
               }}
+              match your filters
             </template>
             <template v-else>
               {{ audiences.length }} registered guest{{ audiences.length === 1 ? '' : 's' }} across
@@ -551,34 +592,273 @@ onUnmounted(() => {
             </template>
           </p>
         </div>
-        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <button
-            v-if="authStore.isAdmin"
-            type="button"
-            class="w-full sm:w-auto rounded-lg bg-gold-500 px-3 py-2 text-sm font-semibold text-maroon-950 hover:bg-gold-400"
-            @click="openImport"
-          >
-            Import Excel
-          </button>
-          <label class="sr-only" for="audience-event-filter">Filter by workshop</label>
-          <select
-            id="audience-event-filter"
-            v-model="selectedEventId"
-            class="w-full sm:w-52 rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60"
-          >
-            <option value="">All workshops</option>
-            <option v-for="event in workshopEvents" :key="event.id" :value="event.id">
-              {{ event.title }}
-            </option>
-          </select>
-          <div class="relative w-full sm:w-64">
+        <button
+          v-if="authStore.isAdmin"
+          type="button"
+          class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-gold-500 px-3.5 py-2 text-sm font-semibold text-maroon-950 shadow-sm shadow-gold-500/20 transition-colors hover:bg-gold-400 sm:w-auto"
+          @click="openImport"
+        >
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+              d="M12 16V4m0 0L8 8m4-4 4 4M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2"
+            />
+          </svg>
+          Import Excel
+        </button>
+      </div>
+
+      <div class="border-b border-maroon-700/50 bg-maroon-950/25 p-4 sm:p-5">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div class="relative w-full lg:max-w-xs">
+            <svg
+              class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.8"
+                d="m21 21-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
+              />
+            </svg>
             <input
               v-model="search"
-              type="search"
+              type="text"
               placeholder="Search name, email, ticket…"
-              class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 placeholder:text-bone-500 outline-none focus:border-gold-500/60"
+              class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 py-2 pl-9 pr-9 text-sm text-bone-200 placeholder:text-bone-500 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/10"
             />
+            <button
+              v-if="search"
+              type="button"
+              class="absolute right-2.5 top-1/2 -translate-y-1/2 rounded-md p-0.5 text-bone-500 transition-colors hover:text-gold-300"
+              aria-label="Clear search"
+              @click="search = ''"
+            >
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
           </div>
+
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-3 lg:flex lg:flex-wrap">
+            <div class="relative">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="M8 7V3m8 4V3M3 11h18M5 5h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"
+                />
+              </svg>
+              <label class="sr-only" for="audience-event-filter">Filter by workshop</label>
+              <select
+                id="audience-event-filter"
+                v-model="selectedEventId"
+                class="w-full appearance-none rounded-lg border border-maroon-700/60 bg-maroon-950/60 py-2 pl-9 pr-8 text-sm text-bone-200 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/10 lg:w-48"
+                :class="selectedEventId ? 'border-gold-500/40 text-bone-100' : ''"
+              >
+                <option value="">All workshops</option>
+                <option v-for="event in workshopEvents" :key="event.id" :value="event.id">
+                  {{ event.title }}
+                </option>
+              </select>
+              <svg
+                class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="m6 9 6 6 6-6"
+                />
+              </svg>
+            </div>
+
+            <div class="relative">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="M9 12h6m-6 4h4M7 4h7l4 4v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+                />
+              </svg>
+              <label class="sr-only" for="audience-score-filter">
+                Filter by preferred score view
+              </label>
+              <select
+                id="audience-score-filter"
+                v-model="scoreViewFilter"
+                class="w-full appearance-none rounded-lg border border-maroon-700/60 bg-maroon-950/60 py-2 pl-9 pr-8 text-sm text-bone-200 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/10 lg:w-40"
+                :class="scoreViewFilter ? 'border-gold-500/40 text-bone-100' : ''"
+              >
+                <option value="">All score views</option>
+                <option
+                  v-for="option in SCORE_VIEW_OPTIONS"
+                  :key="option.value"
+                  :value="option.value"
+                >
+                  {{ option.label.split(' (')[0] }}
+                </option>
+              </select>
+              <svg
+                class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="m6 9 6 6 6-6"
+                />
+              </svg>
+            </div>
+
+            <div class="relative">
+              <svg
+                class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <label class="sr-only" for="audience-checkin-filter">
+                Filter by check-in status
+              </label>
+              <select
+                id="audience-checkin-filter"
+                v-model="checkInFilter"
+                class="w-full appearance-none rounded-lg border border-maroon-700/60 bg-maroon-950/60 py-2 pl-9 pr-8 text-sm text-bone-200 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/10 lg:w-44"
+                :class="checkInFilter ? 'border-gold-500/40 text-bone-100' : ''"
+              >
+                <option value="">All check-in status</option>
+                <option value="checked">Checked in</option>
+                <option value="not-checked">Not checked in</option>
+              </select>
+              <svg
+                class="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-bone-500"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="m6 9 6 6 6-6"
+                />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div
+          v-if="hasFilters"
+          class="mt-3 flex flex-wrap items-center gap-2 border-t border-maroon-700/30 pt-3"
+        >
+          <span class="text-[10px] uppercase tracking-[0.18em] text-bone-500">Active</span>
+          <button
+            v-if="search"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2.5 py-1 text-[11px] text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300"
+            @click="search = ''"
+          >
+            “{{ search }}”
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="selectedEventId"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2.5 py-1 text-[11px] text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300"
+            @click="selectedEventId = ''"
+          >
+            {{ selectedEventName }}
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="scoreViewFilter"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2.5 py-1 text-[11px] text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300"
+            @click="scoreViewFilter = ''"
+          >
+            {{ scoreViewFilterLabel }} score
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+          <button
+            v-if="checkInFilter"
+            type="button"
+            class="inline-flex items-center gap-1 rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2.5 py-1 text-[11px] text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300"
+            @click="checkInFilter = ''"
+          >
+            {{ checkInFilterLabel }}
+            <svg class="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+          <button
+            type="button"
+            class="ml-auto text-[11px] font-medium text-gold-400 transition-colors hover:text-gold-300"
+            @click="clearFilters"
+          >
+            Clear all
+          </button>
         </div>
       </div>
 
@@ -589,120 +869,252 @@ onUnmounted(() => {
       <div v-else-if="!workshopEvents.length" class="p-4 sm:p-6 text-bone-400">
         No workshop events yet. Add a workshop in the Schedules section to collect guests.
       </div>
-      <div v-else-if="!filteredAudiences.length" class="p-4 sm:p-6 text-bone-400">
-        {{
-          search || selectedEventId
-            ? 'No guests match your filters.'
-            : 'No guests have registered for a workshop yet.'
-        }}
+      <div
+        v-else-if="!filteredAudiences.length"
+        class="flex flex-col items-center justify-center gap-2 px-4 py-12 text-center"
+      >
+        <span
+          class="flex h-11 w-11 items-center justify-center rounded-full border border-maroon-700/60 bg-maroon-800/30 text-bone-500"
+        >
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.7"
+              d="m21 21-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
+            />
+          </svg>
+        </span>
+        <p class="text-sm text-bone-400">
+          {{
+            hasFilters
+              ? 'No guests match your filters.'
+              : 'No guests have registered for a workshop yet.'
+          }}
+        </p>
+        <button
+          v-if="hasFilters"
+          type="button"
+          class="text-xs font-medium text-gold-400 transition-colors hover:text-gold-300"
+          @click="clearFilters"
+        >
+          Clear filters
+        </button>
       </div>
       <template v-else>
+        <div
+          class="hidden grid-cols-[minmax(0,1.7fr)_minmax(0,0.75fr)_minmax(0,0.8fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_120px] gap-4 border-b border-maroon-700/50 bg-maroon-950/40 px-5 py-2.5 text-[10px] font-medium uppercase tracking-[0.16em] text-bone-500 xl:grid"
+        >
+          <span>Guest</span>
+          <span>Vocal range</span>
+          <span>Score view</span>
+          <span>Workshop</span>
+          <span>Check-in</span>
+          <span class="text-right">Actions</span>
+        </div>
+
         <ul class="divide-y divide-maroon-800/70">
           <li
             v-for="guest in paginatedAudiences"
             :key="`${guest.eventId}-${guest.email}`"
-            class="p-3 sm:p-4 hover:bg-maroon-800/30"
+            class="px-4 py-4 transition-colors hover:bg-maroon-800/25 sm:px-5 xl:grid xl:grid-cols-[minmax(0,1.7fr)_minmax(0,0.75fr)_minmax(0,0.8fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_120px] xl:items-center xl:gap-4"
           >
-            <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
-              <div class="flex min-w-0 flex-1 items-start gap-3">
-                <div
-                  class="flex w-10 h-10 flex-shrink-0 items-center justify-center rounded-full border border-gold-500/25 bg-gold-500/10 text-sm font-semibold text-gold-300"
-                >
-                  {{ initials(guest) }}
-                </div>
-                <div class="min-w-0 flex-1 space-y-1.5">
-                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span class="text-sm font-medium text-bone-200 break-words">{{
-                      guest.name
-                    }}</span>
-                    <span
-                      class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
-                      >{{ guest.vocalRange }}</span
-                    >
-                    <span
-                      v-if="guest.preferredScoreView"
-                      class="px-2 py-0.5 rounded-full border border-maroon-600/50 bg-maroon-800/40 text-[10px] uppercase tracking-wider text-bone-400"
-                      >{{ guest.preferredScoreView }} score</span
-                    >
-                    <span
-                      v-if="guest.registrationId"
-                      class="px-2 py-0.5 rounded-full border border-gold-500/20 bg-gold-500/5 text-[10px] font-mono text-gold-300"
-                      >#{{ guest.registrationId }}</span
-                    >
-                    <span
-                      class="px-2 py-0.5 rounded-full border text-[10px] font-medium"
-                      :class="
-                        guest.checkedIn
-                          ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : 'border-maroon-600/50 bg-maroon-800/40 text-bone-400'
-                      "
-                    >
-                      {{ guest.checkedIn ? 'Checked in' : 'Not checked in' }}
-                    </span>
-                  </div>
-                  <p class="text-xs text-bone-500 break-all sm:truncate">{{ guest.email }}</p>
-                  <div
-                    class="grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2 lg:grid-cols-3"
+            <div class="flex min-w-0 items-start gap-3">
+              <div
+                class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full border border-gold-500/25 bg-gradient-to-br from-gold-500/15 to-maroon-700/30 text-sm font-semibold text-gold-300 shadow-inner shadow-gold-500/10"
+              >
+                {{ initials(guest) }}
+              </div>
+              <div class="min-w-0 flex-1">
+                <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p class="truncate text-sm font-medium text-bone-100">{{ guest.name }}</p>
+                  <span
+                    v-if="guest.registrationId"
+                    class="rounded-full border border-gold-500/20 bg-gold-500/5 px-1.5 py-0.5 text-[10px] font-mono text-gold-300"
+                    >#{{ guest.registrationId }}</span
                   >
-                    <p class="min-w-0">
-                      <span class="text-bone-500">Ticket </span>
-                      <span class="font-mono text-gold-300/80 break-all">{{
-                        guest.ticketId || '—'
-                      }}</span>
-                    </p>
-                    <p class="min-w-0">
-                      <span class="text-bone-500">Workshop </span>
-                      <span class="text-bone-300">{{ guest.eventTitle }}</span>
-                      <span v-if="guest.eventDate" class="text-bone-500"
-                        >· {{ formatDate(guest.eventDate) }}</span
-                      >
-                    </p>
-                    <p class="min-w-0">
-                      <span class="text-bone-500">Check-in </span>
-                      <span :class="guest.checkedIn ? 'text-emerald-300' : 'text-bone-500'">{{
-                        guest.checkedIn ? formatDateTime(guest.checkedInAt) || 'Checked in' : '—'
-                      }}</span>
-                    </p>
-                  </div>
+                </div>
+                <p class="mt-0.5 truncate text-xs text-bone-500">{{ guest.email }}</p>
+                <p class="mt-1 truncate font-mono text-[10px] text-bone-600">
+                  {{ guest.ticketId || '—' }}
+                </p>
+              </div>
+            </div>
+
+            <div class="hidden xl:block">
+              <span
+                class="inline-flex rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2 py-0.5 text-[11px] text-bone-300"
+              >
+                {{ guest.vocalRange || '—' }}
+              </span>
+            </div>
+
+            <div class="hidden xl:block">
+              <span
+                v-if="guest.preferredScoreView"
+                class="inline-flex items-center gap-1.5 text-xs capitalize text-bone-300"
+              >
+                <svg
+                  class="h-3.5 w-3.5 text-gold-400/80"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                    d="M9 12h6m-6 4h4M7 4h7l4 4v12a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+                  />
+                </svg>
+                {{ guest.preferredScoreView }} score
+              </span>
+              <span v-else class="text-xs text-bone-600">—</span>
+            </div>
+
+            <div class="hidden min-w-0 xl:block">
+              <p class="truncate text-xs text-bone-300" :title="guest.eventTitle">
+                {{ guest.eventTitle }}
+              </p>
+              <p v-if="guest.eventDate" class="mt-0.5 text-[10px] text-bone-500">
+                {{ formatDate(guest.eventDate) }}
+              </p>
+            </div>
+
+            <div class="hidden xl:block">
+              <div class="flex items-center gap-2">
+                <span
+                  class="h-2 w-2 flex-shrink-0 rounded-full"
+                  :class="guest.checkedIn ? 'bg-emerald-400' : 'bg-bone-600'"
+                ></span>
+                <div class="min-w-0">
+                  <p
+                    class="text-xs font-medium"
+                    :class="guest.checkedIn ? 'text-emerald-300' : 'text-bone-400'"
+                  >
+                    {{ guest.checkedIn ? 'Checked in' : 'Not checked in' }}
+                  </p>
+                  <p v-if="guest.checkedIn" class="mt-0.5 text-[10px] text-bone-500">
+                    {{ formatDateTime(guest.checkedInAt) || '—' }}
+                  </p>
                 </div>
               </div>
-              <div class="flex flex-wrap gap-2 sm:flex-col sm:items-stretch">
-                <button
-                  v-if="authStore.isAdmin"
-                  type="button"
-                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
-                  :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Send confirmation email with ticket PDF'"
-                  class="flex-1 rounded-lg border border-gold-500/30 px-3 py-1.5 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
-                  @click="sendTicketEmail(guest)"
+            </div>
+
+            <div class="mt-3 flex flex-wrap items-center gap-2 xl:hidden">
+              <span
+                class="inline-flex rounded-full border border-maroon-600/50 bg-maroon-800/40 px-2 py-0.5 text-[10px] text-bone-300"
+              >
+                {{ guest.vocalRange || '—' }}
+              </span>
+              <span
+                v-if="guest.preferredScoreView"
+                class="inline-flex items-center gap-1 rounded-full border border-gold-500/20 bg-gold-500/5 px-2 py-0.5 text-[10px] capitalize text-gold-300"
+              >
+                {{ guest.preferredScoreView }} score
+              </span>
+              <span
+                class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium"
+                :class="
+                  guest.checkedIn
+                    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                    : 'border-maroon-600/50 bg-maroon-800/40 text-bone-400'
+                "
+              >
+                <span
+                  class="h-1.5 w-1.5 rounded-full"
+                  :class="guest.checkedIn ? 'bg-emerald-400' : 'bg-bone-500'"
+                ></span>
+                {{ guest.checkedIn ? 'Checked in' : 'Not checked in' }}
+              </span>
+              <span class="min-w-0 max-w-full truncate text-[10px] text-bone-500">
+                {{ guest.eventTitle }}
+                <template v-if="guest.eventDate"> · {{ formatDate(guest.eventDate) }}</template>
+              </span>
+            </div>
+
+            <div class="mt-3 flex items-center gap-1.5 xl:mt-0 xl:justify-end">
+              <button
+                v-if="authStore.isAdmin"
+                type="button"
+                :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
+                :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Send confirmation email with ticket PDF'"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gold-500/25 text-gold-300 transition-colors hover:border-gold-500/50 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Send confirmation email"
+                @click="sendTicketEmail(guest)"
+              >
+                <svg
+                  v-if="sendingEmailId === guestKey(guest)"
+                  class="h-4 w-4 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
                 >
-                  {{ sendingEmailId === guestKey(guest) ? 'Sending…' : 'Send email' }}
-                </button>
-                <button
-                  type="button"
-                  :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
-                  :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
-                  class="flex-1 rounded-lg border border-gold-500/30 px-3 py-1.5 text-xs text-gold-300 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-none"
-                  @click="downloadTicket(guest)"
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                    d="M3 8l9 6 9-6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z"
+                  />
+                </svg>
+              </button>
+              <button
+                v-if="authStore.isAdmin"
+                type="button"
+                :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
+                :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gold-500/25 text-gold-300 transition-colors hover:border-gold-500/50 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                aria-label="Download ticket PDF"
+                @click="downloadTicket(guest)"
+              >
+                <svg
+                  v-if="downloadingTicketId === guestKey(guest)"
+                  class="h-4 w-4 animate-spin"
+                  viewBox="0 0 24 24"
+                  fill="none"
                 >
-                  {{ downloadingTicketId === guestKey(guest) ? 'Generating…' : 'Download ticket PDF' }}
-                </button>
-                <button
-                  type="button"
-                  class="flex-1 rounded-lg border border-maroon-700/60 px-3 py-1.5 text-xs text-bone-300 hover:text-gold-300 sm:flex-none"
-                  @click="openEdit(guest)"
-                >
-                  Edit
-                </button>
-              </div>
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                    d="M12 4v10m0 0-4-4m4 4 4-4M4 18v1a1 1 0 001 1h14a1 1 0 001-1v-1"
+                  />
+                </svg>
+              </button>
+              <button
+                v-if="authStore.isAdmin"
+                type="button"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-maroon-700/60 text-bone-300 transition-colors hover:border-gold-500/40 hover:bg-gold-500/5 hover:text-gold-300"
+                aria-label="Edit guest"
+                title="Edit guest"
+                @click="openEdit(guest)"
+              >
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.7"
+                    d="m16.5 4.5 3 3M4 20l4.5-1 10-10a2.12 2.12 0 00-3-3l-10 10L4 20z"
+                  />
+                </svg>
+              </button>
             </div>
           </li>
         </ul>
 
         <div
-          class="flex flex-col gap-3 border-t border-maroon-700/50 px-4 sm:px-5 py-3 text-xs text-bone-400 sm:flex-row sm:items-center sm:justify-between"
+          class="flex flex-col gap-3 border-t border-maroon-700/50 bg-maroon-950/20 px-4 py-3 text-xs text-bone-400 sm:flex-row sm:items-center sm:justify-between sm:px-5"
         >
           <p>
-            Showing {{ pageStart }}–{{ pageEnd }} of {{ filteredAudiences.length }} guest{{
+            Showing <span class="font-medium text-bone-300">{{ pageStart }}–{{ pageEnd }}</span> of
+            <span class="font-medium text-bone-300">{{ filteredAudiences.length }}</span> guest{{
               filteredAudiences.length === 1 ? '' : 's'
             }}
           </p>
@@ -710,19 +1122,39 @@ onUnmounted(() => {
             <button
               type="button"
               :disabled="page <= 1"
-              class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+              class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
               @click="page -= 1"
             >
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="m15 18-6-6 6-6"
+                />
+              </svg>
               Previous
             </button>
-            <span class="px-1 text-bone-500">Page {{ page }} of {{ pageCount }}</span>
+            <span
+              class="rounded-lg border border-maroon-700/40 bg-maroon-900/40 px-3 py-1.5 text-bone-300"
+            >
+              Page {{ page }} of {{ pageCount }}
+            </span>
             <button
               type="button"
               :disabled="page >= pageCount"
-              class="px-3 py-1.5 rounded-lg border border-maroon-700/60 text-xs text-bone-300 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+              class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
               @click="page += 1"
             >
               Next
+              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.8"
+                  d="m9 18 6-6-6-6"
+                />
+              </svg>
             </button>
           </div>
         </div>

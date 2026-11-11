@@ -113,7 +113,7 @@ export async function generateTicketPdf(guest) {
   const scoreViewLabel = scoreView
     ? scoreView.charAt(0).toUpperCase() + scoreView.slice(1).toLowerCase()
     : ''
-  const vocalRangeLine = scoreViewLabel ? `${vocalRange} - ${scoreViewLabel}` : vocalRange
+  const vocalRangeLine = scoreViewLabel ? `${vocalRange} - ${scoreViewLabel} Score` : vocalRange
   page.drawText(vocalRangeLine, {
     x: contentCenterX - boldFont.widthOfTextAtSize(vocalRangeLine, vocalRangeSize) / 2,
     y: textY,
