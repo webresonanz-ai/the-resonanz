@@ -13,11 +13,22 @@ export function ticketGuestName(name) {
   if (!value) return 'Guest'
   if (value.length <= 25) return value
 
-  const clipped = value.slice(0, 25)
-  if (value[25] === ' ') return clipped
+  const words = value.split(' ')
+  const kept = []
+  let length = 0
 
-  const lastSpace = clipped.lastIndexOf(' ')
-  return (lastSpace > 0 ? clipped.slice(0, lastSpace) : clipped).trim() || 'Guest'
+  for (let index = 0; index < words.length; index += 1) {
+    const word = words[index]
+    const nextLength = length + (kept.length ? 1 : 0) + word.length
+    if (nextLength > 25) {
+      const initials = words.slice(index).map((remaining) => `${remaining[0].toUpperCase()}.`)
+      return [...kept, ...initials].join(' ')
+    }
+    kept.push(word)
+    length = nextLength
+  }
+
+  return kept.join(' ')
 }
 
 export function ticketFilename(guest) {
@@ -77,7 +88,7 @@ export async function generateTicketPdf(guest) {
   }
   if (currentLine) nameLines.push(currentLine)
 
-  let textY = height - margin - nameSize - 455
+  let textY = height - margin - nameSize - 365
   for (const line of nameLines) {
     const lineWidth = boldFont.widthOfTextAtSize(line, nameSize)
     page.drawText(line, {
