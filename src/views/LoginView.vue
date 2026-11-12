@@ -2,6 +2,7 @@
 import { ref, reactive } from 'vue'
 import { RouterLink, useRouter, useRoute } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { getAuthRedirect } from '@/lib/authRedirect'
 
 const router = useRouter()
 const route = useRoute()
@@ -29,13 +30,13 @@ const handleSubmit = async () => {
   authStore.clearError()
   if (!validate()) return
   const ok = await authStore.login(form.email, form.password)
-  if (ok) router.push(route.query.redirect || '/')
+  if (ok) router.push(getAuthRedirect(route.query.redirect))
 }
 
 const googleSignIn = async () => {
   authStore.clearError()
   const ok = await authStore.loginWithGoogle()
-  if (ok) router.push(route.query.redirect || '/')
+  if (ok) router.push(getAuthRedirect(route.query.redirect))
 }
 </script>
 
@@ -172,7 +173,7 @@ const googleSignIn = async () => {
 
         <p class="mt-5 text-center text-[13px] sm:text-sm text-bone-500">
           Don't have an account?
-          <RouterLink to="/register" class="text-gold-400 hover:text-gold-300 font-medium transition-colors">Register</RouterLink>
+          <RouterLink :to="{ name: 'register', query: route.query.redirect ? { redirect: route.query.redirect } : {} }" class="text-gold-400 hover:text-gold-300 font-medium transition-colors">Register</RouterLink>
         </p>
       </div>
     </div>

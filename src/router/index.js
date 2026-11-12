@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { getAuthRedirect } from '@/lib/authRedirect'
 import HomeView from '../views/HomeView.vue'
 
 const router = createRouter({
@@ -85,7 +86,7 @@ router.beforeEach(async (to) => {
   // The dashboard is public. Only bounce already-signed-in users away from
   // the login/register pages so they don't see them twice.
   if (to.meta.guest && authStore.isAuthenticated) {
-    return { name: 'home' }
+    return getAuthRedirect(to.query.redirect)
   }
 
   if (to.meta.admin && !authStore.isAdmin) {
