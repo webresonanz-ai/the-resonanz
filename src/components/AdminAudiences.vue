@@ -30,7 +30,8 @@ const selectedEventId = ref('')
 const scoreViewFilter = ref('')
 const checkInFilter = ref('')
 const page = ref(1)
-const PAGE_SIZE = 8
+const pageSize = ref(8)
+const PAGE_SIZE_OPTIONS = [8, 16, 32, 64]
 const editing = ref(null)
 const form = ref({ name: '', vocalRange: '', preferredScoreView: '' })
 const formError = ref('')
@@ -137,8 +138,9 @@ const selectedEventName = computed(
 
 const scoreViewFilterLabel = computed(
   () =>
-    SCORE_VIEW_OPTIONS.find((option) => option.value === scoreViewFilter.value)?.label.split(' (')[0]
-    || '',
+    SCORE_VIEW_OPTIONS.find((option) => option.value === scoreViewFilter.value)?.label.split(
+      ' (',
+    )[0] || '',
 )
 
 const checkInFilterLabel = computed(
@@ -153,23 +155,63 @@ function clearFilters() {
 }
 
 const pageCount = computed(() =>
-  Math.max(1, Math.ceil(filteredAudiences.value.length / PAGE_SIZE)),
+  Math.max(1, Math.ceil(filteredAudiences.value.length / pageSize.value)),
 )
 
 const paginatedAudiences = computed(() => {
-  const start = (page.value - 1) * PAGE_SIZE
-  return filteredAudiences.value.slice(start, start + PAGE_SIZE)
+  const start = (page.value - 1) * pageSize.value
+  return filteredAudiences.value.slice(start, start + pageSize.value)
 })
 
 const pageStart = computed(() =>
-  filteredAudiences.value.length ? (page.value - 1) * PAGE_SIZE + 1 : 0,
+  filteredAudiences.value.length ? (page.value - 1) * pageSize.value + 1 : 0,
 )
 
 const pageEnd = computed(() =>
-  Math.min(page.value * PAGE_SIZE, filteredAudiences.value.length),
+  Math.min(page.value * pageSize.value, filteredAudiences.value.length),
 )
 
+const pageNumbers = computed(() => {
+  const total = pageCount.value
+  const current = page.value
+
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, index) => ({
+      type: 'page',
+      value: index + 1,
+      key: `page-${index + 1}`,
+    }))
+  }
+
+  const numbers = new Set([1, total, current])
+  for (let offset = 1; offset <= 2; offset += 1) {
+    if (current - offset >= 1) numbers.add(current - offset)
+    if (current + offset <= total) numbers.add(current + offset)
+  }
+
+  const sorted = [...numbers].sort((a, b) => a - b)
+  const entries = []
+  let previous = 0
+  for (const value of sorted) {
+    if (value - previous > 1) {
+      entries.push({ type: 'gap', key: `gap-${previous}-${value}` })
+    }
+    entries.push({ type: 'page', value, key: `page-${value}` })
+    previous = value
+  }
+  return entries
+})
+
+function goToPage(target) {
+  const next = Math.min(Math.max(1, target), pageCount.value)
+  if (next !== page.value) page.value = next
+}
+
 watch([search, selectedEventId, scoreViewFilter, checkInFilter], () => {
+  page.value = 1
+})
+
+watch(pageSize, () => {
   page.value = 1
 })
 
@@ -506,7 +548,9 @@ async function parseImportFile(file) {
   for (let index = 1; index < matrix.length; index += 1) {
     const cells = matrix[index]
     const name = String(cells[nameIndex] ?? '').trim()
-    const email = String(cells[emailIndex] ?? '').trim().toLowerCase()
+    const email = String(cells[emailIndex] ?? '')
+      .trim()
+      .toLowerCase()
     const vocalRangeRaw = String(cells[vocalRangeIndex] ?? '').trim()
     const scoreViewRaw = String(cells[scoreViewIndex] ?? '').trim()
 
@@ -979,7 +1023,7 @@ onUnmounted(() => {
         <ul class="divide-y divide-maroon-800/70">
           <li
             v-for="guest in paginatedAudiences"
-            :key="`${guest.eventId}-${guest.email}`"
+            :key="guestKey(guest)"
             class="px-4 py-4 transition-colors hover:bg-maroon-800/25 sm:px-5 xl:grid xl:grid-cols-[minmax(0,1.7fr)_minmax(0,0.75fr)_minmax(0,0.8fr)_minmax(0,1.1fr)_minmax(0,0.9fr)_120px] xl:items-center xl:gap-4"
           >
             <div class="flex min-w-0 items-start gap-3">
@@ -1129,8 +1173,19 @@ onUnmounted(() => {
               <button
                 v-if="authStore.isAdmin"
                 type="button"
-                :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
-                :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Send confirmation email with ticket PDF'"
+                :disabled="
+                  !guest.ticketDesignURL ||
+                  !guest.ticketId ||
+                  Boolean(downloadingTicketId) ||
+                  Boolean(sendingEmailId)
+                "
+                :title="
+                  !guest.ticketDesignURL
+                    ? 'Upload a ticket design for this workshop first'
+                    : !guest.ticketId
+                      ? 'Ticket ID unavailable'
+                      : 'Send confirmation email with ticket PDF'
+                "
                 class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gold-500/25 text-gold-300 transition-colors hover:border-gold-500/50 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Send confirmation email"
                 @click="sendTicketEmail(guest)"
@@ -1141,8 +1196,19 @@ onUnmounted(() => {
                   viewBox="0 0 24 24"
                   fill="none"
                 >
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  />
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
                 <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -1156,8 +1222,19 @@ onUnmounted(() => {
               <button
                 v-if="authStore.isAdmin"
                 type="button"
-                :disabled="!guest.ticketDesignURL || !guest.ticketId || Boolean(downloadingTicketId) || Boolean(sendingEmailId)"
-                :title="!guest.ticketDesignURL ? 'Upload a ticket design for this workshop first' : !guest.ticketId ? 'Ticket ID unavailable' : 'Download ticket PDF'"
+                :disabled="
+                  !guest.ticketDesignURL ||
+                  !guest.ticketId ||
+                  Boolean(downloadingTicketId) ||
+                  Boolean(sendingEmailId)
+                "
+                :title="
+                  !guest.ticketDesignURL
+                    ? 'Upload a ticket design for this workshop first'
+                    : !guest.ticketId
+                      ? 'Ticket ID unavailable'
+                      : 'Download ticket PDF'
+                "
                 class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-gold-500/25 text-gold-300 transition-colors hover:border-gold-500/50 hover:bg-gold-500/10 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="Download ticket PDF"
                 @click="downloadTicket(guest)"
@@ -1168,8 +1245,19 @@ onUnmounted(() => {
                   viewBox="0 0 24 24"
                   fill="none"
                 >
-                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
-                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  <circle
+                    class="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="4"
+                  />
+                  <path
+                    class="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                  />
                 </svg>
                 <svg v-else class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -1210,44 +1298,83 @@ onUnmounted(() => {
               filteredAudiences.length === 1 ? '' : 's'
             }}
           </p>
-          <div class="flex items-center justify-between gap-2 sm:justify-end">
-            <button
-              type="button"
-              :disabled="page <= 1"
-              class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
-              @click="page -= 1"
-            >
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.8"
-                  d="m15 18-6-6 6-6"
-                />
-              </svg>
-              Previous
-            </button>
-            <span
-              class="rounded-lg border border-maroon-700/40 bg-maroon-900/40 px-3 py-1.5 text-bone-300"
-            >
-              Page {{ page }} of {{ pageCount }}
-            </span>
-            <button
-              type="button"
-              :disabled="page >= pageCount"
-              class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
-              @click="page += 1"
-            >
-              Next
-              <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.8"
-                  d="m9 18 6-6-6-6"
-                />
-              </svg>
-            </button>
+          <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+            <label class="flex items-center gap-2 text-[11px] text-bone-500">
+              <span class="whitespace-nowrap">Rows per page</span>
+              <select
+                v-model.number="pageSize"
+                class="appearance-none rounded-lg border border-maroon-700/60 bg-maroon-950/60 py-1.5 pl-2.5 pr-7 text-xs text-bone-300 outline-none transition-colors focus:border-gold-500/60 focus:ring-2 focus:ring-gold-500/10"
+              >
+                <option v-for="size in PAGE_SIZE_OPTIONS" :key="size" :value="size">
+                  {{ size }}
+                </option>
+              </select>
+            </label>
+
+            <div class="flex items-center justify-between gap-1.5 sm:justify-end">
+              <button
+                type="button"
+                :disabled="page <= 1"
+                aria-label="Previous page"
+                class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+                @click="goToPage(page - 1)"
+              >
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                    d="m15 18-6-6 6-6"
+                  />
+                </svg>
+                <span class="hidden sm:inline">Previous</span>
+              </button>
+
+              <span
+                class="rounded-lg border border-maroon-700/40 bg-maroon-900/40 px-3 py-1.5 text-bone-300 sm:hidden"
+              >
+                Page {{ page }} of {{ pageCount }}
+              </span>
+
+              <div class="hidden items-center gap-1 sm:flex">
+                <template v-for="entry in pageNumbers" :key="entry.key">
+                  <span v-if="entry.type === 'gap'" class="px-1 text-bone-600">…</span>
+                  <button
+                    v-else
+                    type="button"
+                    :aria-current="entry.value === page ? 'page' : undefined"
+                    :aria-label="`Page ${entry.value}`"
+                    class="inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 text-xs transition-colors"
+                    :class="
+                      entry.value === page
+                        ? 'border-gold-500/60 bg-gold-500/15 font-semibold text-gold-300'
+                        : 'border-maroon-700/60 text-bone-300 hover:border-gold-500/40 hover:text-gold-300'
+                    "
+                    @click="goToPage(entry.value)"
+                  >
+                    {{ entry.value }}
+                  </button>
+                </template>
+              </div>
+
+              <button
+                type="button"
+                :disabled="page >= pageCount"
+                aria-label="Next page"
+                class="inline-flex items-center gap-1 rounded-lg border border-maroon-700/60 px-2.5 py-1.5 text-xs text-bone-300 transition-colors hover:border-gold-500/40 hover:text-gold-300 disabled:cursor-not-allowed disabled:opacity-40"
+                @click="goToPage(page + 1)"
+              >
+                <span class="hidden sm:inline">Next</span>
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.8"
+                    d="m9 18 6-6-6-6"
+                  />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </template>
@@ -1316,7 +1443,9 @@ onUnmounted(() => {
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-bone-400 mb-1.5">Preferred score view</label>
+                <label class="block text-xs font-medium text-bone-400 mb-1.5"
+                  >Preferred score view</label
+                >
                 <select
                   v-model="form.preferredScoreView"
                   class="w-full rounded-lg border border-maroon-700/60 bg-maroon-950/60 px-3 py-2 text-sm text-bone-200 outline-none focus:border-gold-500/60"
@@ -1378,7 +1507,9 @@ onUnmounted(() => {
               </div>
 
               <div>
-                <label class="block text-xs font-medium text-bone-400 mb-1.5">Check-in status</label>
+                <label class="block text-xs font-medium text-bone-400 mb-1.5"
+                  >Check-in status</label
+                >
                 <div
                   class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm"
                   :class="
@@ -1403,7 +1534,10 @@ onUnmounted(() => {
                   disabled
                   class="w-full rounded-lg border border-maroon-700/40 bg-maroon-950/40 px-3 py-2 text-sm text-bone-300 cursor-not-allowed"
                 />
-                <p v-if="editing.checkedInByName || editing.checkedInBy" class="mt-1.5 text-xs text-bone-500">
+                <p
+                  v-if="editing.checkedInByName || editing.checkedInBy"
+                  class="mt-1.5 text-xs text-bone-500"
+                >
                   Checked in by {{ editing.checkedInByName || editing.checkedInBy }}
                 </p>
               </div>
@@ -1436,7 +1570,10 @@ onUnmounted(() => {
           v-if="pendingRemoveCheckIn"
           class="fixed inset-0 z-50 flex items-center justify-center p-4"
         >
-          <div class="absolute inset-0 bg-black/70 backdrop-blur-sm" @click="closeRemoveCheckIn"></div>
+          <div
+            class="absolute inset-0 bg-black/70 backdrop-blur-sm"
+            @click="closeRemoveCheckIn"
+          ></div>
 
           <div
             class="relative w-full max-w-md rounded-2xl border border-maroon-700/60 bg-maroon-900 p-4 sm:p-6 shadow-2xl shadow-black/60 animate-scale-in"
@@ -1525,7 +1662,9 @@ onUnmounted(() => {
                 1. Workshop
               </span>
               <span class="text-bone-600">/</span>
-              <span :class="importStep === 2 ? 'text-gold-300' : 'text-bone-500'">2. Excel file</span>
+              <span :class="importStep === 2 ? 'text-gold-300' : 'text-bone-500'"
+                >2. Excel file</span
+              >
             </div>
 
             <template v-if="importStep === 1">
