@@ -121,18 +121,12 @@ const navigation = [
     icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z',
   },
   {
-    name: 'Scan QR Code',
-    path: '/scan',
-    scannerOnly: true,
-    icon: 'M4 4h4V2M4 4H2v4m16-4h4V2M16 4h2v4M4 16v4h2M2 16h4M16 16v4h2M16 16h4M8 8h.01M16 8h.01M12 12h.01M8 16h.01M16 16h.01M8 12h.01M16 12h.01M12 8h.01M12 16h.01',
-  },
-  {
     name: 'Contact',
     path: '/contact',
     icon: 'M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z',
   },
 ]
-const navigationOrder = ['Dashboard', 'Courses & Fee', 'Schedules', 'Teachers', 'News', 'Contact', 'Admin', 'Users', 'Audiences', 'Scan QR Code']
+const navigationOrder = ['Dashboard', 'Courses & Fee', 'Schedules', 'Teachers', 'News', 'Contact', 'Admin', 'Users', 'Audiences']
 const visibleNavigation = computed(() =>
   navigation
     .filter((item) => navigationOrder.includes(item.name) && (!item.adminOnly || authStore.isAdmin) && (!item.scannerOnly || authStore.isScanner))
